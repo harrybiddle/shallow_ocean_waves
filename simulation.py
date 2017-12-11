@@ -86,6 +86,8 @@ import numpy as np
 #
 #
 
+MILLISECONDS_PER_SECOND = 1000
+
 def create_h(ni, nj):
     return np.zeros((nj + 2, ni + 2))
 
@@ -170,43 +172,81 @@ def reflect_v_ghost_cells(v):
 def reflect_h_ghost_cells(h):
     return reflect_ghost_cells(h)
 
-def timestep(u, v, h, constants):
+def timestep(u, v, h, dt, constants):
     reflect_u_ghost_cells(u)
     reflect_v_ghost_cells(v)
     reflect_h_ghost_cells(h)
 
     c = constants
-    du_dt = compute_du_dt(h, u, v, c.rotation, c.drag, c.gravity, c.wind, c.dx, c.dt)
-    dv_dt = compute_dv_dt(h, u, v, c.rotation, c.drag, c.gravity, c.dy, c.dt)
-    dh_dt = compute_dh_dt(u, v, c.h_background, c.dx, c.dt)
+    du_dt = compute_du_dt(h, u, v, c.rotation, c.drag, c.gravity, c.wind, c.dx, dt)
+    dv_dt = compute_dv_dt(h, u, v, c.rotation, c.drag, c.gravity, c.dy, dt)
+    dh_dt = compute_dh_dt(u, v, c.h_background, c.dx, dt)
 
     timestep_u(u, du_dt)
     timestep_v(v, dv_dt)
     timestep_h(h, dh_dt)
 
-def timestep_and_update_image(frame_number, dt, plot_surface, take_timestep):
+def simulate_and_draw_frame(frame_number, simulate_frame, plot_surface):
     ''' Animation function to be passed to matplotlib.animation.FuncAnimation.
     Progresses the simulation forwards and then updates the image.
+
+    Arguments:
+        frame_number: (unused) the number of the frame that should be updated
+        simulate_frame: a function that progresses a simulation to the next frame.
+            it takes no arguments and has no return value.
+        plot_surface: a function that creates a new surface image. It takes
+            no arguments but returns the matplotlib artist.
 
     Returns:
         An iterable of artists that matplotlib should update
     '''
-    fps = 50
-    for f in range(0, fps):
-        print ('t = {:0.2f}'.format((fps * frame_number + f) * dt))
-        take_timestep()
+    simulate_frame()
     return [plot_surface()]
 
 def clear_axes_and_plot_surface(axes, x, y, h):
+    ''' Plot the current height grid as a 3D surface. The z-axis is hard-coded
+    to [0, 1] regardless of the height values.
+
+    Arguments:
+        axes: a matplotlib.Axes3D object. It will be clear()'d on every call,
+            so don't set any options on it!
+        x, y: arrays of the x and y coordinates. These arrays should be the same
+            size as the height field array without ghost values.
+        h: height field, including ghost values
+    '''
     axes.clear()
     axes.set_zlim(0, 1)
     clipped = h[1:-1, 1:-1]
     return axes.plot_surface(x, y, clipped, cmap=cm.coolwarm, vmin=0, vmax=1)
 
+class Timestepper():
+    ''' Step simulations forwards until they exactly hit a given frame of
+    animation. Each step is of size dt, where dt is calculated up-front and
+    fixed throughout all steps '''
+
+    def __init__(self,
+                 target_dt,
+                 fps,
+                 simulation_seconds_per_video_second,
+                 timestep_function):
+        simulation_seconds_per_frame = simulation_seconds_per_video_second / fps
+        self.steps_per_frame = math.ceil(simulation_seconds_per_frame / target_dt)
+        self.dt = simulation_seconds_per_frame / self.steps_per_frame
+        self.timestep_function = timestep_function
+        self.time = 0
+
+    def step_to_next_frame(self):
+        for _ in range(0, self.steps_per_frame):
+            self.timestep_function(self.dt)
+            self.time += self.dt
+        print ('time = {:.2f}s in {} timesteps'.format(self.time,
+                                                       self.steps_per_frame))
+
 def parse_args(argv):
+    ''' Parse an array of command-line options into a argparse.Namespace '''
     parser = argparse.ArgumentParser()
-    parser.add_argument('--ni', type=int, default=10)
-    parser.add_argument('--nj', type=int, default=10)
+    parser.add_argument('--ni', type=int, default=200)
+    parser.add_argument('--nj', type=int, default=200)
     parser.add_argument('--n', type=int)
     parser.add_argument('--rotation', type=float, default=0.0)
     parser.add_argument('--drag', type=float, default=1.E-6)
@@ -214,8 +254,10 @@ def parse_args(argv):
     parser.add_argument('--wind', type=float, default=1.e-8)
     parser.add_argument('--dx', type=float, default=10.E3)
     parser.add_argument('--dy', type=float, default=10.E3)
-    parser.add_argument('--dt', type=float, default=60)
+    parser.add_argument('--dt', type=float, default=60, dest='target_dt')
     parser.add_argument('--h_background', type=float, default=4000)
+    parser.add_argument('--speed-multiplier', type=int, default=70000)
+    parser.add_argument('--fps', type=int, default=24)
     args = parser.parse_args(argv[1:])
 
     # pick --n option over --ni and --nj, if supplied
@@ -241,13 +283,20 @@ def main(argv):
     axes = figure.add_subplot(111, projection='3d')
     clear_axes_and_plot_surface(axes, x, y, h)
 
+    # convenient way to progress simulation
+    take_timestep_of_given_size = lambda dt: timestep(u, v, h, dt, args)
+    timestepper = Timestepper(target_dt=args.target_dt,
+                              fps=args.fps,
+                              simulation_seconds_per_video_second=args.speed_multiplier,
+                              timestep_function=take_timestep_of_given_size)
+
     # create loop to update plot and progress simulation forwards
+    millseconds_per_frame = MILLISECONDS_PER_SECOND / args.fps
     _ = animation.FuncAnimation(figure,
-            timestep_and_update_image,
-            fargs=(args.dt,
-                   lambda: clear_axes_and_plot_surface(axes, x, y, h),
-                   lambda: timestep(u, v, h, args)),
-                   interval=1)
+            simulate_and_draw_frame,
+            fargs=(lambda: clear_axes_and_plot_surface(axes, x, y, h),
+                   lambda: timestepper.step_to_next_frame()),
+            interval=millseconds_per_frame)
     plt.show()
 
 if __name__ == '__main__':

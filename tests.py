@@ -1,13 +1,15 @@
 import math
 import unittest
+from unittest import mock
 
 import numpy as np
 
 from simulation import *
+from euler_two_step import *
 
 class NumpyTestCase(unittest.TestCase):
 
-    def test_array(self):
+    def create_new_test_array(self):
         return np.array([[1, 4, 8, 2, 4, 8, 1],
                          [4, 8, 1, 5, 8, 5, 5],
                          [2, 3, 0, 0, 1, 9, 1],
@@ -35,17 +37,17 @@ class TestStartingArrays(NumpyTestCase):
         v = create_v(10, 10)
         self.assertEqual((13, 12), v.shape)
 
-    def test_starting_height_is_column(self):
-        h = np.arange(81).reshape(9, 9)
-        add_central_column(h)
-        v = 0
-        for j in range(0, 9):
-            for i in range(0, 9):
-                if (3 <= i and i <= 5) and (3 <= j and j <= 5):
-                    self.assertEqual(v + 1, h[j][i])
-                else:
-                    self.assertEqual(v + 0, h[j][i])
-                v += 1
+    # def test_starting_height_is_column(self):
+    #     h = np.arange(81).reshape(9, 9)
+    #     add_central_column(h)
+    #     v = 0
+    #     for j in range(0, 9):
+    #         for i in range(0, 9):
+    #             if (3 <= i and i <= 5) and (3 <= j and j <= 5):
+    #                 self.assertEqual(v + 1, h[j][i])
+    #             else:
+    #                 self.assertEqual(v + 0, h[j][i])
+    #             v += 1
 
 class TestCompute(NumpyTestCase):
 
@@ -65,7 +67,7 @@ class TestCompute(NumpyTestCase):
 
     def test_compute_du_dt_values(self):
         u = np.arange(48).reshape(6, 8)
-        h = self.test_array()
+        h = self.create_new_test_array()
         h_copy = np.array(h, copy=True)
         u_copy = np.array(u, copy=True)
         du_dt = compute_du_dt(h, u, v=None,
@@ -120,7 +122,7 @@ class TestBoundary(NumpyTestCase):
     arrays below ghost values are written in parentheses for clarity '''
 
     def test_u_ghost_cells(self):
-        u = self.test_array()
+        u = self.create_new_test_array()
         reflect_u_ghost_cells(u)
         expected = np.array([[(5), (1), (7), (1), (5), (1), (7)],
                              [(8),   8,   1,   5,   8, (8), (1)],
@@ -131,7 +133,7 @@ class TestBoundary(NumpyTestCase):
         self.assert_arrays_equal(u, expected)
 
     def test_v_ghost_cells(self):
-        v = self.test_array()
+        v = self.create_new_test_array()
         reflect_v_ghost_cells(v)
         expected = np.array([[(2), (2), (1), (8), (0), (2), (2)],
                              [(5),   8,   1,   5,   8,   5, (8)],
@@ -142,7 +144,7 @@ class TestBoundary(NumpyTestCase):
         self.assert_arrays_equal(v, expected)
 
     def test_h_ghost_cells(self):
-        h = self.test_array()
+        h = self.create_new_test_array()
         reflect_h_ghost_cells(h)
         expected = np.array([[(0), (1), (7), (1), (5), (0), (1)],
                              [(5),   8,   1,   5,   8,   5, (8)],
@@ -196,8 +198,7 @@ class TestSolverAgainstAnalyticalSolutions(NumpyTestCase):
                                '--rotation', '0',
                                '--gravity', '0',
                                '--drag', str(drag),
-                                '--wind', '0',
-                                '--dt', str(dt)])
+                                '--wind', '0'])
 
         # initial conditions
         u = create_u(n, n)
@@ -208,7 +209,7 @@ class TestSolverAgainstAnalyticalSolutions(NumpyTestCase):
 
         # solve for nsteps
         for _ in range(0, nsteps):
-            timestep(u, v, h, constants)
+            timestep(u, v, h, dt, constants)
 
         # check every cell is equal to the analytical solution
         analytical_solution_u = u_0 * math.exp( - drag * nsteps * dt)
@@ -220,6 +221,35 @@ class TestSolverAgainstAnalyticalSolutions(NumpyTestCase):
         self.assertTrue(np.all(inner_u - analytical_solution_u < 0.01))
         self.assertTrue(np.all(inner_v - analytical_solution_v < 0.01))
 
+class TestTimestepper(unittest.TestCase):
+
+    def test_timestepper_easiest_case(self):
+        f = mock.Mock()
+        t = Timestepper(target_dt=1,
+                        fps=1,
+                        simulation_seconds_per_video_second=1,
+                        timestep_function=f)
+        t.step_to_next_frame()
+        f.assert_called_once_with(1.0)
+
+    def test_timestepper_fps_large_dt(self):
+        f = mock.Mock()
+        t = Timestepper(target_dt=1,
+                        fps=24,
+                        simulation_seconds_per_video_second=1,
+                        timestep_function=f)
+        t.step_to_next_frame()
+        f.assert_called_once_with(1/24)
+
+    def test_timestepper_fps_small_dt_double_speed(self):
+        f = mock.Mock()
+        t = Timestepper(target_dt=1/40,
+                        fps=24,
+                        simulation_seconds_per_video_second=2,
+                        timestep_function=f)
+        t.step_to_next_frame()
+        self.assertEqual(4, f.call_count)
+        f.assert_has_calls([mock.call(1/48)] * 4)
 
 if __name__ == '__main__':
     unittest.main()
