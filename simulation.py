@@ -73,7 +73,7 @@ def create_bump_in_centre(h, width=0.25):
             h[j, i] = wave_shape(d, width)
 
 
-def compute_time_derivatives(h, u, v, c, dt):
+def compute_time_derivatives(u, v, h, c):
     ''' According to the equations:
 
             du/dt = - gravity * dh/dx - drag * u + wind
@@ -119,7 +119,7 @@ def reflect_ghost_cells(u, v, h):
 
 def timestep(u, v, h, dt, constants):
     reflect_ghost_cells(u, v, h)
-    du_dt, dv_dt, dh_dt = compute_time_derivatives(h, u, v, constants, dt)
+    du_dt, dv_dt, dh_dt = compute_time_derivatives(u, v, h, constants)
     apply_time_derivatives(u, v, h, du_dt, dv_dt, dh_dt, dt)
 
 def simulate_and_draw_frame(frame_number, simulate_frame, plot_surface):
