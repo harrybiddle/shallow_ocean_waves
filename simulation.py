@@ -1,4 +1,5 @@
 import argparse
+import logging
 import math
 import sys
 
@@ -191,8 +192,8 @@ def simulate_and_draw_frame(frame_number, simulate_frame, plot_surface):
 
     Arguments:
         frame_number: (unused) the number of the frame that should be updated
-        simulate_frame: a function that progresses a simulation to the next frame.
-            it takes no arguments and has no return value.
+        simulate_frame: a function that progresses a simulation to the next
+            frame. It takes no arguments and has no return value.
         plot_surface: a function that creates a new surface image. It takes
             no arguments but returns the matplotlib artist.
 
@@ -237,7 +238,6 @@ class Timestepper():
         self.u1 = np.array(u, copy=True)
         self.v1 = np.array(v, copy=True)
         self.h1 = np.array(h, copy=True)
-
         self.u2 = np.array(u, copy=True)
         self.v2 = np.array(v, copy=True)
         self.h2 = np.array(h, copy=True)
@@ -255,7 +255,6 @@ class Timestepper():
             np.copyto(dst=self.u1, src=self.u)
             np.copyto(dst=self.v1, src=self.v)
             np.copyto(dst=self.h1, src=self.h)
-
             np.copyto(dst=self.u2, src=self.u)
             np.copyto(dst=self.v2, src=self.v)
             np.copyto(dst=self.h2, src=self.h)
@@ -273,10 +272,10 @@ class Timestepper():
             E = np.linalg.norm(self.h2[1:-1, 1:-1] - self.h1[1:-1, 1:-1],
                                ord=np.inf)
             r = E / dt
-            print ('E=', E, 'r=', r, 'Acceptable?', r < self.epsilon)
 
             # break out if the error is accceptible
             error_below_threshold = (r < self.epsilon)
+            logging.debug('E={}, r={}, r < epsilon? {}'.format(E, r, error_below_threshold))
             if error_below_threshold:
                 self.dt = dt
                 self.t += dt
@@ -288,9 +287,8 @@ class Timestepper():
                 return steps, self.dt
 
             # repeat with a reduced dt if the error is too high
-            dt_new = 0.9 * self.epsilon * dt / r
-            print (dt, ' is reduced to ', dt_new)
-            dt = dt_new
+            dt = 0.9 * self.epsilon * dt / r
+            logging.debug ('Reduced dt to {}'.format(dt))
 
     def step_to_next_frame(self):
         # step until we are past the target time. will overstep a bit, but it
@@ -319,6 +317,7 @@ def parse_args(argv):
     parser.add_argument('--h_background', type=float, default=4000)
     parser.add_argument('--speed-multiplier', type=int, default=70000)
     parser.add_argument('--fps', type=int, default=24)
+    parser.add_argument('-v', '--debug', action='store_true')
     args = parser.parse_args(argv[1:])
 
     # pick --n option over --ni and --nj, if supplied
@@ -329,6 +328,9 @@ def parse_args(argv):
 
 def main(argv):
     args = parse_args(argv)
+
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
 
     # starting arrays and initial conditions
     u = create_u(args.ni, args.nj)
@@ -344,8 +346,8 @@ def main(argv):
     axes = figure.add_subplot(111, projection='3d')
     clear_axes_and_plot_surface(axes, x, y, h)
 
-    # create timestepper object that encapsulates how to progress the simulation
-    # forwards in time
+    # create timestepper object. This encapsulates how to progress the
+    # simulation forwards in time
     seconds_per_frame = args.speed_multiplier / args.fps
     timestep_function = lambda u, v, h, dt: timestep(u, v, h, dt, args)
     timestepper = Timestepper(u, v, h, timestep_function, seconds_per_frame)
