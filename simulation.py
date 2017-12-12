@@ -97,60 +97,59 @@ def create_u(ni, nj):
 def create_v(ni, nj):
     return np.zeros((nj + 3, ni + 2))
 
-def add_central_column(h):
-    ''' Adds a column of height 1 in the middle third of the grid. Input
-    is modified in-place '''
-    nj, ni = h.shape
-    ni_2 = ni / 2
-    nj_2 = nj / 2
+def create_bump_in_centre(h, width=0.25):
+    ''' Adds a small wave in the centre of the grid. The wave is of height one
+    and the diameter of the base is a WIDTH fraction of the grid width. For
+    example, WIDTH=0.25 corresponds to a quarter of the grid width.
+    '''
 
-    def bump(x, width):
+    def wave_shape(x, width):
+        ''' A wave with unit height at X=0, going down to zero at X=width/2 '''
         x = np.clip(x, a_min=0, a_max=width / 2)
         y = math.cos(2 * math.pi * x / width) + 1
         return y / 2 # normalise to [0, 1]
 
-    def dist(i, j):
-        return math.sqrt((i - ni / 2) ** 2 + (j - nj / 2) ** 2)
-
-    def norm_dist(i, j):
-        return dist(i, j) / dist(0, 0)
+    nj, ni = h.shape
+    def normalised_distance_to_grid_centre(i, j):
+        d = lambda i, j: math.sqrt((i - ni / 2) ** 2 + (j - nj / 2) ** 2)
+        return d(i, j) / d(0, 0)
 
     for j in range(0, nj):
         for i in range(0, ni):
-            d = dist(i, j)
-            h[j, i] = bump(norm_dist(i, j), 0.25)
+            d = normalised_distance_to_grid_centre(i, j)
+            h[j, i] = wave_shape(d, width)
 
 
-def compute_du_dt(h, u, v, rotation, drag, gravity, wind, dx, dt):
+def compute_du_dt(h, u, v, rotation, drag, gravity, wind, dx):
     ''' According to the equation:
-            du/dt = (- gravity * dh/dx - drag * u + wind) * dt
+            du/dt = - gravity * dh/dx - drag * u + wind
     Return is without ghost values '''
     dh_dx = np.diff(h, axis=1) / dx
-    return (- gravity * dh_dx - drag * u[:, 1:-1] + wind) * dt
+    return - gravity * dh_dx - drag * u[:, 1:-1] + wind
 
-def compute_dv_dt(h, u, v, rotation, drag, gravity, dy, dt):
+def compute_dv_dt(h, u, v, rotation, drag, gravity, dy):
     ''' According to the equation:
-            dv/dt = (- gravity * dh/dy - drag * v) * dt
+            dv/dt = - gravity * dh/dy - drag * v
     Return is without ghost values '''
     dh_dy = np.diff(h, axis=0) / dy
-    return (- gravity * dh_dy - drag * v[1:-1, :]) * dt
+    return - gravity * dh_dy - drag * v[1:-1, :]
 
-def compute_dh_dt(u, v, h_background, dx, dt):
+def compute_dh_dt(u, v, h_background, dx):
     ''' According to the equation:
-            dh/dt = - (( du/dx + dv/dy ) * h_background / dx) * dt
+            dh/dt = - ( du/dx + dv/dy ) * h_background / dx
     '''
     du_dx = np.diff(u, axis=1)
     dv_dy = np.diff(v, axis=0)
-    return - ((du_dx + dv_dy) * h_background / dx) * dt
+    return - (du_dx + dv_dy) * h_background / dx
 
-def timestep_u(u, du_dt):
-    u[:, 1:-1] += du_dt
+def timestep_u(u, du_dt, dt):
+    u[:, 1:-1] += du_dt * dt
 
-def timestep_v(v, dv_dt):
-    v[1:-1, :] += dv_dt
+def timestep_v(v, dv_dt, dt):
+    v[1:-1, :] += dv_dt * dt
 
-def timestep_h(h, dh_dt):
-    h += dh_dt
+def timestep_h(h, dh_dt, dt):
+    h += dh_dt * dt
 
 def reflect_ghost_cells(array, right_boundary=1, bottom_boundary=1):
     ''' Fills ghost cells with reflected values of the non-ghost cells. Ghost
@@ -178,13 +177,13 @@ def timestep(u, v, h, dt, constants):
     reflect_h_ghost_cells(h)
 
     c = constants
-    du_dt = compute_du_dt(h, u, v, c.rotation, c.drag, c.gravity, c.wind, c.dx, dt)
-    dv_dt = compute_dv_dt(h, u, v, c.rotation, c.drag, c.gravity, c.dy, dt)
-    dh_dt = compute_dh_dt(u, v, c.h_background, c.dx, dt)
+    du_dt = compute_du_dt(h, u, v, c.rotation, c.drag, c.gravity, c.wind, c.dx)
+    dv_dt = compute_dv_dt(h, u, v, c.rotation, c.drag, c.gravity, c.dy)
+    dh_dt = compute_dh_dt(u, v, c.h_background, c.dx)
 
-    timestep_u(u, du_dt)
-    timestep_v(v, dv_dt)
-    timestep_h(h, dh_dt)
+    timestep_u(u, du_dt, dt)
+    timestep_v(v, dv_dt, dt)
+    timestep_h(h, dh_dt, dt)
 
 def simulate_and_draw_frame(frame_number, simulate_frame, plot_surface):
     ''' Animation function to be passed to matplotlib.animation.FuncAnimation.
@@ -220,27 +219,89 @@ def clear_axes_and_plot_surface(axes, x, y, h):
     return axes.plot_surface(x, y, clipped, cmap=cm.coolwarm, vmin=0, vmax=1)
 
 class Timestepper():
-    ''' Step simulations forwards until they exactly hit a given frame of
-    animation. Each step is of size dt, where dt is calculated up-front and
-    fixed throughout all steps '''
 
-    def __init__(self,
-                 target_dt,
-                 fps,
-                 simulation_seconds_per_video_second,
-                 timestep_function):
-        simulation_seconds_per_frame = simulation_seconds_per_video_second / fps
-        self.steps_per_frame = math.ceil(simulation_seconds_per_frame / target_dt)
-        self.dt = simulation_seconds_per_frame / self.steps_per_frame
-        self.timestep_function = timestep_function
-        self.time = 0
+    def __init__(self, u, v, h, timestep, seconds_per_frame, t=0, epsilon=1e-5,
+                 max_steps=1000):
+        ''' Implements the simple Euler 2-Step Adaptive Step Size algorithm
+        from http://www.math.ubc.ca/~feldman/math/vble.pdf.
+        '''
+        # ingest all arguments to self
+        for name, value in vars().items():
+            if name != 'self':
+                setattr(self, name, value)
+
+        # take one frame to be the starting dt
+        self.dt = seconds_per_frame
+
+        # create temporary copies for the substeps
+        self.u1 = np.array(u, copy=True)
+        self.v1 = np.array(v, copy=True)
+        self.h1 = np.array(h, copy=True)
+
+        self.u2 = np.array(u, copy=True)
+        self.v2 = np.array(v, copy=True)
+        self.h2 = np.array(h, copy=True)
+
+    def step_forwards(self):
+        steps = 0
+        dt = self.dt
+        while True:
+            # bail out if we're not converging
+            if steps > self.max_steps:
+                raise RuntimeError('Not converged after {} steps'.format(steps))
+            steps += 1
+
+            # reset temporary arrays
+            np.copyto(dst=self.u1, src=self.u)
+            np.copyto(dst=self.v1, src=self.v)
+            np.copyto(dst=self.h1, src=self.h)
+
+            np.copyto(dst=self.u2, src=self.u)
+            np.copyto(dst=self.v2, src=self.v)
+            np.copyto(dst=self.h2, src=self.h)
+
+            # take one step forwards by dt
+            self.timestep(self.u1, self.v1, self.h1, dt)
+
+            # take two half-steps forwards by dt/2
+            self.timestep(self.u2, self.v2, self.h2, dt / 2)
+            self.timestep(self.u2, self.v2, self.h2, dt / 2)
+
+            # compare the two in order to generate an error estimate
+            # only comparing height field here: could go further and compare u
+            # and v too, but this seems to be OK
+            E = np.linalg.norm(self.h2[1:-1, 1:-1] - self.h1[1:-1, 1:-1],
+                               ord=np.inf)
+            r = E / dt
+            print ('E=', E, 'r=', r, 'Acceptable?', r < self.epsilon)
+
+            # break out if the error is accceptible
+            error_below_threshold = (r < self.epsilon)
+            if error_below_threshold:
+                self.dt = dt
+                self.t += dt
+                # combine the two solutions to get the lowest error possible
+                # TODO replace with a swap for speed
+                np.copyto(dst=self.u, src=(2 * self.u2 - self.u1))
+                np.copyto(dst=self.v, src=(2 * self.v2 - self.v1))
+                np.copyto(dst=self.h, src=(2 * self.h2 - self.h1))
+                return steps, self.dt
+
+            # repeat with a reduced dt if the error is too high
+            dt_new = 0.9 * self.epsilon * dt / r
+            print (dt, ' is reduced to ', dt_new)
+            dt = dt_new
 
     def step_to_next_frame(self):
-        for _ in range(0, self.steps_per_frame):
-            self.timestep_function(self.dt)
-            self.time += self.dt
-        print ('time = {:.2f}s in {} timesteps'.format(self.time,
-                                                       self.steps_per_frame))
+        # step until we are past the target time. will overstep a bit, but it
+        # doesn't make much of a visual difference
+        target_time = self.t + self.seconds_per_frame
+        total_steps = 0
+        while self.t < target_time:
+            steps, _ = self.step_forwards()
+            total_steps += steps
+
+        print ('time = {:.2f}s in {} timesteps'.format(self.t, total_steps))
 
 def parse_args(argv):
     ''' Parse an array of command-line options into a argparse.Namespace '''
@@ -273,7 +334,7 @@ def main(argv):
     u = create_u(args.ni, args.nj)
     v = create_v(args.ni, args.nj)
     h = create_h(args.ni, args.nj)
-    add_central_column(h)
+    create_bump_in_centre(h)
 
     # create initial plot
     x = np.linspace(0, 100, args.ni)
@@ -283,12 +344,11 @@ def main(argv):
     axes = figure.add_subplot(111, projection='3d')
     clear_axes_and_plot_surface(axes, x, y, h)
 
-    # convenient way to progress simulation
-    take_timestep_of_given_size = lambda dt: timestep(u, v, h, dt, args)
-    timestepper = Timestepper(target_dt=args.target_dt,
-                              fps=args.fps,
-                              simulation_seconds_per_video_second=args.speed_multiplier,
-                              timestep_function=take_timestep_of_given_size)
+    # create timestepper object that encapsulates how to progress the simulation
+    # forwards in time
+    seconds_per_frame = args.speed_multiplier / args.fps
+    timestep_function = lambda u, v, h, dt: timestep(u, v, h, dt, args)
+    timestepper = Timestepper(u, v, h, timestep_function, seconds_per_frame)
 
     # create loop to update plot and progress simulation forwards
     millseconds_per_frame = MILLISECONDS_PER_SECOND / args.fps
