@@ -16,87 +16,39 @@ import numpy as np
 # This is a cell centered grid, wrapping
 # around in Y, zero at X:
 #
-#        --- i --->
-#      ................................
-#      .       .       .       .       .
-#  |   .  h00  .  h01  .  h02  .  h03  .
-#  j   .       .       .       .       .
-#  |   ........-----------------........
-#  V   .       |       |       |       .
-#      .  h10  |  h11  |  h12  |  h13  .
-#      .       |       |       |       .
-#      ........-----------------........
-#      .       |       |       |       .
-#      .  h20  |  h21  |  h22  |  h23  .
-#      .       |       |       |       .
-#      ........-----------------........
-#      .       .       .       .       .
-#      .  h30  .  h31  .  h32  .  h33  .
-#      .       .       .       .       .  shape (nj + 2, ni + 2)
-#     .................................
-#
-#
-#        --- i --->
-#      ..~v00~...~v01~...~v02~...~v03~..
-#      .       .       .       .       .
+#   (0, 0)  --- i --->               (0, 4)
+#      ...~v~.....~v~.....~v~.....~v~...
+#  |    .       .       .       .       .
+#  j  ~u~ ~h~ ~u~ ~h~ ~u~ ~h~ ~u~ ~h~ ~u~
 #  |   .       .       .       .       .
-#  j   .       .       .       .       .
-#  |   ..~v10~.---v11-----v12---.~v13~..
-#  V   .       |       |       |       .
+#  v   ...~v~..----v-------v----..~v~..
 #      .       |       |       |       .
+#     ~u~ ~h~  u   h   u   h  ~u~ ~h~  ~u~
 #      .       |       |       |       .
-#      ..~v20~.---v21-----v22---.~v23~..
+#      ...~v~..|---v ---.--v --|..~v~...
 #      .       |       |       |       .
+#     ~u~ ~h~  u   h   u   h  ~u~ ~h~ ~u~
 #      .       |       |       |       .
-#      .       |       |       |       .
-#      ..~v30~.--~v31~---~v32~--.~v33~..
+#      ...~v~..---~v~-----~v~---..~v~...
 #      .       .       .       .       .
-#      .       .       .       .       .
-#      .       .       .       .       .
-#      ..~v40~...~v41~...~v42~...~v43~..  shape (nj + 3, ni + 2)
-#
-#
-#        --- i --->
-#      .................................
-#      .       .       .       .       .
-#  | ~u00~   ~u01~   ~u02~   ~u03~   ~u04~
-#  j   .       .       .       .       .
-#  |   ........-----------------........
-#  v   .       |       |       |       .
-#    ~u10~    u11     u12    ~u13~   ~u14~
-#      .       |       |       |       .
-#      ........-----------------........
-#      .       |       |       |       .
-#    ~u20~    u21     u22    ~u23~   ~u24~
-#      .       |       |       |       .
-#      ........-----------------........
-#      .       .       .       .       .
-#    ~u30~   ~u31~   ~u32~   ~u33~   ~u34~
-#      .       .       .       .       .
-#      .................................  shape (nj + 2, ni + 3)
-#
-#
-#
+#     ~u~ ~h~  ~u~~h~ ~u~ ~h~ ~u~ ~h~ ~u~      h is shape (nj + 2, ni + 2)
+#      .       .       .       .       .       u is shape (nj + 2, ni + 3)
+#      ...~v~.....~v~.....~v~.....~v~...       v is shape (nj + 3, ni + 2)
+#   (1, 0)                           (4, 4)
 #
 # Governing equations:
 #
 #  dU/dT =   rotation * V - gravity * dH/dX - drag * U + wind
 #  dV/dT = - rotation * U - gravity * dH/dY - drag * V
 #  dH/dT = - ( dU/dX + dV/dY ) * Hbackground / dX
-#
-#
-#
 
 MILLISECONDS_PER_SECOND = 1000
 
-def create_h(ni, nj):
-    return np.zeros((nj + 2, ni + 2))
-
-def create_u(ni, nj):
-    return np.zeros((nj + 2, ni + 3))
-
-def create_v(ni, nj):
-    return np.zeros((nj + 3, ni + 2))
+def create_grids(ni, nj):
+    u = np.zeros((nj + 2, ni + 3))
+    v = np.zeros((nj + 3, ni + 2))
+    h = np.zeros((nj + 2, ni + 2))
+    return u, v, h
 
 def create_bump_in_centre(h, width=0.25):
     ''' Adds a small wave in the centre of the grid. The wave is of height one
@@ -121,38 +73,35 @@ def create_bump_in_centre(h, width=0.25):
             h[j, i] = wave_shape(d, width)
 
 
-def compute_du_dt(h, u, v, rotation, drag, gravity, wind, dx):
-    ''' According to the equation:
+def compute_time_derivatives(h, u, v, c, dt):
+    ''' According to the equations:
+
             du/dt = - gravity * dh/dx - drag * u + wind
-    Return is without ghost values '''
-    dh_dx = np.diff(h, axis=1) / dx
-    return - gravity * dh_dx - drag * u[:, 1:-1] + wind
-
-def compute_dv_dt(h, u, v, rotation, drag, gravity, dy):
-    ''' According to the equation:
             dv/dt = - gravity * dh/dy - drag * v
-    Return is without ghost values '''
-    dh_dy = np.diff(h, axis=0) / dy
-    return - gravity * dh_dy - drag * v[1:-1, :]
+            dh/dt = - (du/dx + dv/dy) * h_background / dx
 
-def compute_dh_dt(u, v, h_background, dx):
-    ''' According to the equation:
-            dh/dt = - ( du/dx + dv/dy ) * h_background / dx
+    Returns arrays are created new and returned without any ghost values.
     '''
-    du_dx = np.diff(u, axis=1)
-    dv_dy = np.diff(v, axis=0)
-    return - (du_dx + dv_dy) * h_background / dx
 
-def timestep_u(u, du_dt, dt):
+    # spatial derivatives
+    dh_dx = np.diff(h, axis=1) / c.dx
+    dh_dy = np.diff(h, axis=0) / c.dy
+    du_dx = np.diff(u, axis=1) / c.dx
+    dv_dy = np.diff(v, axis=0) / c.dy
+
+    # construct time derivatives
+    du_dt = - c.gravity * dh_dx - c.drag * u[:, 1:-1] + c.wind
+    dv_dt = - c.gravity * dh_dy - c.drag * v[1:-1, :]
+    dh_dt = - (du_dx + dv_dy) * c.h_background / c.dx
+
+    return du_dt, dv_dt, dh_dt
+
+def apply_time_derivatives(u, v, h, du_dt, dv_dt, dh_dt, dt):
     u[:, 1:-1] += du_dt * dt
-
-def timestep_v(v, dv_dt, dt):
     v[1:-1, :] += dv_dt * dt
-
-def timestep_h(h, dh_dt, dt):
     h += dh_dt * dt
 
-def reflect_ghost_cells(array, right_boundary=1, bottom_boundary=1):
+def reflect_boundary(array, right_boundary=1, bottom_boundary=1):
     ''' Fills ghost cells with reflected values of the non-ghost cells. Ghost
     cells are in a boundary of a width 1 on the left and top, and RIGHT_BOUNDARY
     and BOTTOM_BOUNDARY on the right and bottom respectively '''
@@ -163,28 +112,15 @@ def reflect_ghost_cells(array, right_boundary=1, bottom_boundary=1):
     nj, ni = array.shape
     np.copyto(dst=array, src=t[0:nj, 0:ni])
 
-def reflect_u_ghost_cells(u):
-    return reflect_ghost_cells(u, right_boundary=2)
-
-def reflect_v_ghost_cells(v):
-    return reflect_ghost_cells(v, bottom_boundary=2)
-
-def reflect_h_ghost_cells(h):
-    return reflect_ghost_cells(h)
+def reflect_ghost_cells(u, v, h):
+    reflect_boundary(u, right_boundary=2)
+    reflect_boundary(v, bottom_boundary=2)
+    reflect_boundary(h)
 
 def timestep(u, v, h, dt, constants):
-    reflect_u_ghost_cells(u)
-    reflect_v_ghost_cells(v)
-    reflect_h_ghost_cells(h)
-
-    c = constants
-    du_dt = compute_du_dt(h, u, v, c.rotation, c.drag, c.gravity, c.wind, c.dx)
-    dv_dt = compute_dv_dt(h, u, v, c.rotation, c.drag, c.gravity, c.dy)
-    dh_dt = compute_dh_dt(u, v, c.h_background, c.dx)
-
-    timestep_u(u, du_dt, dt)
-    timestep_v(v, dv_dt, dt)
-    timestep_h(h, dh_dt, dt)
+    reflect_ghost_cells(u, v, h)
+    du_dt, dv_dt, dh_dt = compute_time_derivatives(h, u, v, constants, dt)
+    apply_time_derivatives(u, v, h, du_dt, dv_dt, dh_dt, dt)
 
 def simulate_and_draw_frame(frame_number, simulate_frame, plot_surface):
     ''' Animation function to be passed to matplotlib.animation.FuncAnimation.
@@ -275,7 +211,7 @@ class Timestepper():
 
             # break out if the error is accceptible
             error_below_threshold = (r < self.epsilon)
-            logging.debug('E={}, r={}, r < epsilon? {}'.format(E, r, error_below_threshold))
+            logging.debug('dt={}, E={}, r={}, sufficient accuracy? {}'.format(dt, E, r, error_below_threshold))
             if error_below_threshold:
                 self.dt = dt
                 self.t += dt
@@ -307,15 +243,14 @@ def parse_args(argv):
     parser.add_argument('--ni', type=int, default=200)
     parser.add_argument('--nj', type=int, default=200)
     parser.add_argument('--n', type=int)
-    parser.add_argument('--rotation', type=float, default=0.0)
+    #parser.add_argument('--rotation', type=float, default=0.0)
     parser.add_argument('--drag', type=float, default=1.E-6)
     parser.add_argument('--gravity', type=float, default=9.8e-4)
     parser.add_argument('--wind', type=float, default=1.e-8)
-    parser.add_argument('--dx', type=float, default=10.E3)
-    parser.add_argument('--dy', type=float, default=10.E3)
-    parser.add_argument('--dt', type=float, default=60, dest='target_dt')
+    parser.add_argument('--dx', type=float, default=500)
+    parser.add_argument('--dy', type=float, default=500)
     parser.add_argument('--h_background', type=float, default=4000)
-    parser.add_argument('--speed-multiplier', type=int, default=70000)
+    parser.add_argument('--speed-multiplier', type=int, default=60000)
     parser.add_argument('--fps', type=int, default=24)
     parser.add_argument('-v', '--debug', action='store_true')
     args = parser.parse_args(argv[1:])
@@ -333,9 +268,7 @@ def main(argv):
         logging.basicConfig(level=logging.DEBUG)
 
     # starting arrays and initial conditions
-    u = create_u(args.ni, args.nj)
-    v = create_v(args.ni, args.nj)
-    h = create_h(args.ni, args.nj)
+    u, v, h = create_grids(args.ni, args.nj)
     create_bump_in_centre(h)
 
     # create initial plot
@@ -346,13 +279,12 @@ def main(argv):
     axes = figure.add_subplot(111, projection='3d')
     clear_axes_and_plot_surface(axes, x, y, h)
 
-    # create timestepper object. This encapsulates how to progress the
-    # simulation forwards in time
+    # create timestepper object. this is used to progress the simulation
     seconds_per_frame = args.speed_multiplier / args.fps
     timestep_function = lambda u, v, h, dt: timestep(u, v, h, dt, args)
     timestepper = Timestepper(u, v, h, timestep_function, seconds_per_frame)
 
-    # create loop to update plot and progress simulation forwards
+    # create loop to progress the simulation and updates the plot
     millseconds_per_frame = MILLISECONDS_PER_SECOND / args.fps
     _ = animation.FuncAnimation(figure,
             simulate_and_draw_frame,
