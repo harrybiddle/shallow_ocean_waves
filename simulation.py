@@ -178,6 +178,10 @@ class Timestepper():
         self.v2 = np.array(v, copy=True)
         self.h2 = np.array(h, copy=True)
 
+    def debug_log(self, dt, E, r, error_below_threshold):
+        logging.debug(('dt={}, E={}, r={}, sufficient accuracy? {}'
+                ).format(dt, E, r, error_below_threshold))
+
     def step_forwards(self):
         steps = 0
         dt = self.dt
@@ -210,21 +214,23 @@ class Timestepper():
             r = E / dt
 
             # break out if the error is accceptible
+            # TODO if the error is very low, consider increasing dt
             error_below_threshold = (r < self.epsilon)
-            logging.debug('dt={}, E={}, r={}, sufficient accuracy? {}'.format(dt, E, r, error_below_threshold))
+            self.debug_log(dt, E, r, error_below_threshold)
             if error_below_threshold:
                 self.dt = dt
                 self.t += dt
+
                 # combine the two solutions to get the lowest error possible
                 # TODO replace with a swap for speed
                 np.copyto(dst=self.u, src=(2 * self.u2 - self.u1))
                 np.copyto(dst=self.v, src=(2 * self.v2 - self.v1))
                 np.copyto(dst=self.h, src=(2 * self.h2 - self.h1))
-                return steps, self.dt
+                return steps, dt
 
             # repeat with a reduced dt if the error is too high
             dt = 0.9 * self.epsilon * dt / r
-            logging.debug ('Reduced dt to {}'.format(dt))
+            logging.debug('Reduced dt to {}'.format(dt))
 
     def step_to_next_frame(self):
         # step until we are past the target time. will overstep a bit, but it
