@@ -1,94 +1,73 @@
 import math
+import numpy as np
 import matplotlib.pyplot as plt
 
 class AdaptiveTimestepper():
 
-    def __init__(self, y0, f, starting_h, t0=0, epsilon=1):
-        self.y = y0
-        self.f = f
-        self.h = starting_h
-        self.t = t0
-        self.epsilon = epsilon
-        self.max_steps = 1000
+    def __init__(self, u, v, h, timestep, dt, t=0, epsilon=1,
+                 max_steps=1000):
+        ''' Implements the simple Euler 2-Step Adaptive Step Size algorithm
+        from http://www.math.ubc.ca/~feldman/math/vble.pdf.
+        '''
+        # ingest all arguments to self
+        for name, value in vars().items():
+            if name != 'self':
+                setattr(self, name, value)
+
+        # create temporary copies for the substeps
+        self.u1 = np.array(u, copy=True)
+        self.v1 = np.array(v, copy=True)
+        self.h1 = np.array(h, copy=True)
+
+        self.u2 = np.array(u, copy=True)
+        self.v2 = np.array(v, copy=True)
+        self.h2 = np.array(h, copy=True)
 
     def step_forwards(self):
         steps = 0
-        h, y, t = self.h, self.y, self.t
+        dt = self.dt
         while True:
             # bail out if we're not converging
             if steps > self.max_steps:
                 raise RuntimeError('Not converged after {} steps'.format(steps))
             steps += 1
 
-            # take one step forwards by h
-            A1 = y + h * self.f(t, y)
+            # reset temporary arrays
+            np.copyto(src=self.u, dst=self.u1)
+            np.copyto(src=self.v, dst=self.v1)
+            np.copyto(src=self.h, dst=self.h1)
 
-            # take two half-steps forwards by h/2
-            A2 =  y + h/2 * self.f(t,       y)
-            A2 = A2 + h/2 * self.f(t + h/2, A2)
+            np.copyto(src=self.u, dst=self.u2)
+            np.copyto(src=self.v, dst=self.v2)
+            np.copyto(src=self.h, dst=self.h2)
+
+            # take one step forwards by dt
+            self.timestep(self.u1, self.v1, self.h1, dt)
+
+            # take two half-steps forwards by dt/2
+            self.timestep(self.u2, self.v2, self.h2, dt / 2)
+            self.timestep(self.u2, self.v2, self.h2, dt / 2)
 
             # compare the two in order to generate an error estimate
-            E = (A1 - A2)
-            r = math.fabs(E) / h
+            # only comparing height field here: could go further and compare u
+            # and v too, but this seems to be OK
+            E = np.linalg.norm(self.h2 - self.h1)
+            r = E / dt
 
             # break out if the error is accceptible
             error_below_threshold = (r < self.epsilon)
             if error_below_threshold:
-                self.h = h
-                self.t += h
-                self.y = 2 * A2 - A1
-                return steps, h, self.y
+                self.dt = dt
+                self.t += dt
+                # combine the two solutions to get the lowest error possible
+                # TODO replace with a swap for speed
+                np.copyto(src=self.u, dst=(2 * self.u2 - self.u1))
+                np.copyto(src=self.v, dst=(2 * self.v2 - self.v1))
+                np.copyto(src=self.h, dst=(2 * self.h2 - self.h1))
+                return steps, self.dt
 
-            # repeat with a reduced h if the error is too high
-            h = 0.9 * self.epsilon * h / r
+            # repeat with a reduced dt if the error is too high
+            dt = 0.9 * self.epsilon * dt / r
 
     def time(self):
         return self.t
-
-def main():
-
-    # problem definition
-    f0 = math.exp(-2)
-    t_final = 10
-    def f(t, y):
-        return 8 * (1 - 2 * t) * y
-
-    # analytical solution
-    def f_solution(t):
-        return f0 * math.exp(-8 * (t - 1) * t)
-
-    def solve_numerically(epsilon, starting_h):
-        # set up a timestepper
-        timestepper = AdaptiveTimestepper(f0, f, starting_h, epsilon=epsilon)
-        ts = [0]
-        ys = [f0]
-        while timestepper.time() < t_final:
-            _, _, solution = timestepper.step_forwards()
-            ts.append(timestepper.time())
-            ys.append(solution)
-
-        # create the errors from the analytical solution
-        errors = []
-        for t, y in zip(ts, ys):
-            analytical_solution = f_solution(t)
-            error = math.fabs(y - analytical_solution)
-            errors.append(error)
-
-        return ts, errors
-
-    def plot(epsilon, starting_h):
-        ts, errors = solve_numerically(epsilon, starting_h)
-        return plt.plot(ts, errors, label=str(epsilon))[0]
-
-    # generate lines
-    handles = []
-    handles.append(plot(epsilon=0.1, starting_h=1))
-    handles.append(plot(epsilon=0.05, starting_h=1))
-    handles.append(plot(epsilon=0.01, starting_h=1))
-
-    # create and show final plot
-    plt.legend(handles=handles)
-    plt.show()
-
-if __name__ == '__main__':
-    main()

@@ -25,6 +25,40 @@ class NumpyTestCase(unittest.TestCase):
 
 class TestAdaptiveTimeStepper(unittest.TestCase):
 
+    def setUp(self):
+        self.u = np.arange(25).reshape((5, 5))
+        self.v = np.arange(25).reshape((5, 5))
+        self.h = np.arange(25).reshape((5, 5))
+        self.timestep = mock.Mock()
+        self.starting_dt = 0.1
+        self.epsilon = 0.1
+        self.max_steps = 10
+        self.timestepper = AdaptiveTimestepper(self.u, self.v, self.h,
+                                               self.timestep, self.starting_dt,
+                                               epsilon=self.epsilon,
+                                               max_steps=self.max_steps)
+
+    def test_start_time(self):
+        self.assertEqual(0, self.timestepper.time())
+
+    def test_progress_with_low_error(self):
+        steps, dt = self.timestepper.step_forwards()
+        self.assertEqual(1, steps)
+        self.assertEqual(self.starting_dt, dt)
+        self.timestep.assert_has_calls([
+            mock.call(mock.ANY, mock.ANY, mock.ANY, 0.1),
+            mock.call(mock.ANY, mock.ANY, mock.ANY, 0.05),
+            mock.call(mock.ANY, mock.ANY, mock.ANY, 0.05)])
+
+    # def test_timestepper(self):
+
+    #     a  = AdaptiveTimestepper(u, v, h, timestep, starting_dt,
+    #                              epsilon=1):
+    #     f0 = 0
+    #     f = mock.Mock()
+    #     a = AdaptiveTimestepper(f0, f, starting_h=0.1, epsilon=0.1)
+
+    #     a.step_forwards()
 
 # class TestStartingArrays(NumpyTestCase):
 
