@@ -40,7 +40,7 @@ import pyqtgraph as pg
 #  dV/dT = - rotation * U - gravity * dH/dY - drag * V
 #  dH/dT = - ( dU/dX + dV/dY ) * Hbackground / dX
 
-MILLISECONDS_PER_SECOND = 1000
+ONE_MILLISECOND = 1
 
 def create_grids(ni, nj):
     u = np.zeros((nj + 2, ni + 3))
@@ -191,8 +191,6 @@ class Timestepper():
             dt = 0.9 * self.epsilon * dt / r
             logging.debug ('Reduced dt to {}'.format(dt))
 
-    total_frames = 0
-
     def step_to_next_frame(self):
         # step until we are past the target time. will overstep a bit, but it
         # doesn't make much of a visual difference
@@ -201,10 +199,8 @@ class Timestepper():
         while self.t < target_time:
             steps, _ = self.step_forwards()
             total_steps += steps
-        self.total_frames += 1
 
         print ('time = {:.2f}s in {} timesteps'.format(self.t, total_steps))
-        print (self.total_frames)
 
 class Video():
 
@@ -225,7 +221,7 @@ class Video():
     def _update_data(self):
         self.update_callback()
         self.image.setImage(self.data)
-        QtCore.QTimer.singleShot(1, lambda: self._update_data())
+        QtCore.QTimer.singleShot(ONE_MILLISECOND, self._update_data)
 
     def _start_qt_event_loop(self):
         app = self.app
@@ -235,11 +231,6 @@ class Video():
         self._create_app()
         self._update_data()
         self._start_qt_event_loop()
-
-def main_loop(_, image, h, timestepper):
-    timestepper.step_to_next_frame()
-    image.set_data(h)
-    return [image]
 
 def parse_args(argv):
     ''' Parse an array of command-line options into a argparse.Namespace '''
