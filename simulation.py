@@ -116,11 +116,13 @@ def reflect_ghost_cells(u, v, h):
     reflect_boundary(h)
 
 def timestep(u, v, h, dt, constants):
+    ''' Meat of the simulation: progress u, v and h forwards in time by a
+    quantity dt using forward Euler '''
     reflect_ghost_cells(u, v, h)
     du_dt, dv_dt, dh_dt = compute_time_derivatives(u, v, h, constants)
     apply_time_derivatives(u, v, h, du_dt, dv_dt, dh_dt, dt)
 
-class Timestepper():
+class AdapativeTwoStep():
 
     def __init__(self, u, v, h, timestep, seconds_per_frame, t=0, epsilon=1e-5,
                  max_steps=1000):
@@ -235,7 +237,7 @@ class Video():
         self.app.exec_()
 
     def show(self):
-        ''' Show the video. This is a blocking call '''
+        ''' Show the video: a blocking call '''
         self._create_qt_application()
         self._progress_frame_and_update_image()
         self._start_qt_event_loop()
@@ -275,16 +277,16 @@ def main(argv):
     u, v, h = create_grids(args.ni, args.nj)
     create_bump_in_centre(h)
 
-    # create timestepper object. this is used to progress the simulation
+    # create timestepper object, which will be used to progress the simulation
     seconds_per_frame = args.speed_multiplier / args.fps
     timestep_function = lambda u, v, h, dt: timestep(u, v, h, dt, args)
-    timestepper = Timestepper(u, v, h, timestep_function, seconds_per_frame)
+    timestepper = AdapativeTwoStep(u, v, h,
+                                   timestep_function,
+                                   seconds_per_frame)
 
-    # create video
+    # create a video of the simulation
     video = Video(pixels=h,
                   progress_frame=timestepper.step_to_next_frame)
-
-    # display video
     video.show()
 
 if __name__ == '__main__':
