@@ -203,33 +203,41 @@ class Timestepper():
         print ('time = {:.2f}s in {} timesteps'.format(self.t, total_steps))
 
 class Video():
+    ''' Given a image and a callback function that mutates it to the next frame,
+    displays the frames as a video in a QT app '''
 
-    def __init__(self, data, update_callback):
-        self.data = data
-        self.update_callback = update_callback
+    def __init__(self, pixels, progress_frame):
+        ''' Arguments:
+            pixels: a 2D array whose entries represent pixel intensity.
+            progress_frame: a function taking no arguments that updates the
+                image to the next frame.
+        '''
+        self.pixels = pixels
+        self.progress_frame = progress_frame
 
-    def _create_app(self):
+    def _create_qt_application(self):
         self.app = QtGui.QApplication([])
         self.win = pg.GraphicsLayoutWidget()
         self.win.show()
         self.image = pg.ImageItem()
         self.view = self.win.addViewBox()
         self.view.addItem(self.image)
-        nj, ni = self.data.shape
+        nj, ni = self.pixels.shape
         self.view.setRange(QtCore.QRectF(0, 0, nj, ni))
 
-    def _update_data(self):
-        self.update_callback()
-        self.image.setImage(self.data)
-        QtCore.QTimer.singleShot(ONE_MILLISECOND, self._update_data)
+    def _progress_frame_and_update_image(self):
+        self.progress_frame()
+        self.image.setImage(self.pixels)
+        QtCore.QTimer.singleShot(ONE_MILLISECOND,
+                                 self._progress_frame_and_update_image)
 
     def _start_qt_event_loop(self):
-        app = self.app
-        QtGui.QApplication.instance().exec_()
+        self.app.exec_()
 
     def show(self):
-        self._create_app()
-        self._update_data()
+        ''' Show the video. This is a blocking call '''
+        self._create_qt_application()
+        self._progress_frame_and_update_image()
         self._start_qt_event_loop()
 
 def parse_args(argv):
@@ -273,8 +281,8 @@ def main(argv):
     timestepper = Timestepper(u, v, h, timestep_function, seconds_per_frame)
 
     # create video
-    video = Video(data=h,
-                  update_callback=timestepper.step_to_next_frame)
+    video = Video(pixels=h,
+                  progress_frame=timestepper.step_to_next_frame)
 
     # display video
     video.show()
