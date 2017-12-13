@@ -118,7 +118,9 @@ def reflect_ghost_cells(u, v, h):
     reflect_boundary(h)
 
 def timestep(u, v, h, dt, constants):
-    np.copyto(dst=h, src=np.roll(h, 1, axis=1))
+    reflect_ghost_cells(u, v, h)
+    du_dt, dv_dt, dh_dt = compute_time_derivatives(u, v, h, constants)
+    apply_time_derivatives(u, v, h, du_dt, dv_dt, dh_dt, dt)
 
 class Timestepper():
 
@@ -143,14 +145,53 @@ class Timestepper():
         self.v2 = np.array(v, copy=True)
         self.h2 = np.array(h, copy=True)
 
-    def debug_log(self, dt, E, r, error_below_threshold):
-        logging.debug(('dt={}, E={}, r={}, sufficient accuracy? {}'
-                ).format(dt, E, r, error_below_threshold))
-
     def step_forwards(self):
-        self.timestep(self.u, self.v, self.h, self.dt)
-        self.t += self.dt
-        return 1, self.dt
+        steps = 0
+        dt = self.dt
+        while True:
+            # bail out if we're not converging
+            if steps > self.max_steps:
+                raise RuntimeError('Not converged after {} steps'.format(steps))
+            steps += 1
+
+            # reset temporary arrays
+            np.copyto(dst=self.u1, src=self.u)
+            np.copyto(dst=self.v1, src=self.v)
+            np.copyto(dst=self.h1, src=self.h)
+            np.copyto(dst=self.u2, src=self.u)
+            np.copyto(dst=self.v2, src=self.v)
+            np.copyto(dst=self.h2, src=self.h)
+
+            # take one step forwards by dt
+            self.timestep(self.u1, self.v1, self.h1, dt)
+
+            # take two half-steps forwards by dt/2
+            self.timestep(self.u2, self.v2, self.h2, dt / 2)
+            self.timestep(self.u2, self.v2, self.h2, dt / 2)
+
+            # compare the two in order to generate an error estimate
+            # only comparing height field here: could go further and compare u
+            # and v too, but this seems to be OK
+            E = np.linalg.norm(self.h2[1:-1, 1:-1] - self.h1[1:-1, 1:-1],
+                               ord=np.inf)
+            r = E / dt
+
+            # break out if the error is accceptible
+            error_below_threshold = (r < self.epsilon)
+            logging.debug('dt={}, E={}, r={}, sufficient accuracy? {}'.format(dt, E, r, error_below_threshold))
+            if error_below_threshold:
+                self.dt = dt
+                self.t += dt
+                # combine the two solutions to get the lowest error possible
+                # TODO replace with a swap for speed
+                np.copyto(dst=self.u, src=(2 * self.u2 - self.u1))
+                np.copyto(dst=self.v, src=(2 * self.v2 - self.v1))
+                np.copyto(dst=self.h, src=(2 * self.h2 - self.h1))
+                return steps, self.dt
+
+            # repeat with a reduced dt if the error is too high
+            dt = 0.9 * self.epsilon * dt / r
+            logging.debug ('Reduced dt to {}'.format(dt))
 
     total_frames = 0
 
