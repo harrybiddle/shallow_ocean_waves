@@ -103,12 +103,20 @@ def reflect_boundary(array, right_boundary=1, bottom_boundary=1):
     ''' Fills ghost cells with reflected values of the non-ghost cells. Ghost
     cells are in a boundary of a width 1 on the left and top, and RIGHT_BOUNDARY
     and BOTTOM_BOUNDARY on the right and bottom respectively '''
-    non_ghost_cells = array[1:-bottom_boundary, 1:-right_boundary]
-    t = np.tile(non_ghost_cells, (2, 2))
-    t = np.roll(t, 1, axis=0)
-    t = np.roll(t, 1, axis=1)
-    nj, ni = array.shape
-    np.copyto(dst=array, src=t[0:nj, 0:ni])
+    rb, bb = right_boundary, bottom_boundary
+    interior = array[1:-bb, 1:-rb]
+
+    array[0, 0]     = interior[-1, -1]               # top left cell
+    array[1:-bb, 0] = interior[:, -1]                # left column
+    array[0, 1:-rb] = interior[-1, :]                # top row
+    for i in range(1, rb + 1):
+        array[1:-bb, -i] = interior[:, rb - i]       # right column(s)
+        array[0, -i]     = interior[-1, rb - i]      # top right cell(s)
+    for j in range(1, bb + 1):
+        array[-j, 1:-rb] = interior[bb - j, :]       # bottom rows(s)
+        array[-j, 0]     = interior[bb - j, -1]      # bottom left cell(s)
+        for i in range(1, rb + 1):
+            array[-j, -i] = interior[bb - j, rb - i]           # bottom right cell(s)
 
 def reflect_ghost_cells(u, v, h):
     reflect_boundary(u, right_boundary=2)

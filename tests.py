@@ -18,7 +18,7 @@ class NumpyTestCase(unittest.TestCase):
                          [2, 3, 0, 0, 7, 0, 7]])
 
     def assert_arrays_equal(self, a, b):
-        self.assertTrue(np.array_equal(a, b))
+        np.testing.assert_equal(a, b)
 
     def assert_arrays_unequal(self, a, b):
         self.assertFalse(np.array_equal(a, b))
