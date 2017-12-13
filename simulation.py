@@ -3,11 +3,9 @@ import logging
 import math
 import sys
 
-from matplotlib import cm
-from mpl_toolkits.mplot3d import Axes3D # required for 3D plots
-import matplotlib.animation as animation
-import matplotlib.pyplot as plt
+from pyqtgraph.Qt import QtCore, QtGui
 import numpy as np
+import pyqtgraph as pg
 
 # make it the number of simulation cells
 # dictate: cell centered, staggered i/j, etc.
@@ -208,6 +206,35 @@ class Timestepper():
         print ('time = {:.2f}s in {} timesteps'.format(self.t, total_steps))
         print (self.total_frames)
 
+class Video():
+
+    def __init__(self, data, update_callback):
+        self.data = data
+        self.update_callback = update_callback
+
+    def _create_app(self):
+        self.app = QtGui.QApplication([])
+        self.win = pg.GraphicsLayoutWidget()
+        self.win.show()
+        self.image = pg.ImageItem()
+        self.view = self.win.addViewBox()
+        self.view.addItem(self.image)
+        nj, ni = self.data.shape
+        self.view.setRange(QtCore.QRectF(0, 0, nj, ni))
+
+    def _update_data(self):
+        self.update_callback()
+        self.image.setImage(self.data)
+        QtCore.QTimer.singleShot(1, lambda: self._update_data())
+
+    def _start_qt_event_loop(self):
+        app = self.app
+        QtGui.QApplication.instance().exec_()
+
+    def show(self):
+        self._create_app()
+        self._update_data()
+        self._start_qt_event_loop()
 
 def main_loop(_, image, h, timestepper):
     timestepper.step_to_next_frame()
@@ -254,15 +281,12 @@ def main(argv):
     timestep_function = lambda u, v, h, dt: timestep(u, v, h, dt, args)
     timestepper = Timestepper(u, v, h, timestep_function, seconds_per_frame)
 
-    # initial plot
-    image = plt.imshow(h, cmap='hot')
+    # create video
+    video = Video(data=h,
+                  update_callback=timestepper.step_to_next_frame)
 
-    # create loop to progress the simulation and updates the plot
-    millseconds_per_frame = MILLISECONDS_PER_SECOND / args.fps
-    _ = animation.FuncAnimation(plt.gcf(),
-            main_loop, fargs=(image, h, timestepper),
-            interval=1)
-    plt.show()
+    # display video
+    video.show()
 
 if __name__ == '__main__':
     main(sys.argv)

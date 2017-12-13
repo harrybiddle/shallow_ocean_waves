@@ -1,26 +1,54 @@
 # -*- coding: utf-8 -*-
 """
-This example demonstrates many of the 2D plotting capabilities
-in pyqtgraph. All of the plots may be panned/scaled by dragging with
-the left/right mouse buttons. Right click on any plot to show a context menu.
+Demonstrates very basic use of ImageItem to display image data inside a ViewBox.
 """
 
-from pyqtgraph.Qt import QtGui, QtCore
+from pyqtgraph.Qt import QtCore, QtGui
 import numpy as np
 import pyqtgraph as pg
+import pyqtgraph.ptime as ptime
 
-app = QtGui.QApplication([])
+class Video():
 
-win = pg.GraphicsWindow(title="Basic plotting examples")
-win.resize(1000,600)
+    def __init__(self, data, update_callback):
+        self.data = data
+        self.update_callback = update_callback
 
-# Enable antialiasing for prettier plots
-pg.setConfigOptions(antialias=True)
+    def _create_app(self):
+        self.app = QtGui.QApplication([])
+        self.win = pg.GraphicsLayoutWidget()
+        self.win.show()
+        self.image = pg.ImageItem()
+        self.view = self.win.addViewBox()
+        self.view.addItem(self.image)
+        nj, ni = self.data.shape
+        self.view.setRange(QtCore.QRectF(0, 0, nj, ni))
 
-p1 = win.addPlot(title="Basic array plotting", y=np.random.normal(size=100))
+    def _update_data(self):
+        self.update_callback()
+        self.image.setImage(self.data)
+        QtCore.QTimer.singleShot(1, self._update_data)
 
-## Start Qt event loop unless running in interactive mode or using pyside.
-if __name__ == '__main__':
-    import sys
-    if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
+    def _start_qt_event_loop(self):
+        app = self.app
         QtGui.QApplication.instance().exec_()
+
+    def show(self):
+        self._create_app()
+        self._update_data()
+        self._start_qt_event_loop()
+
+if __name__ == '__main__':
+    # generate data
+    all_data = np.random.normal(size=(20, 120, 120), loc=1024, scale=64).astype(np.uint16)
+    i = 0
+    data = all_data[i]
+
+    # callback that updates the data
+    def update_callback():
+        global i, data, all_data
+        i = (i+1) % all_data.shape[0]
+        np.copyto(dst=data, src=all_data[i])
+
+    v = Video(data, update_callback)
+    v.show()
