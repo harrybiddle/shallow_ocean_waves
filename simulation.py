@@ -118,9 +118,7 @@ def reflect_ghost_cells(u, v, h):
     reflect_boundary(h)
 
 def timestep(u, v, h, dt, constants):
-    reflect_ghost_cells(u, v, h)
-    du_dt, dv_dt, dh_dt = compute_time_derivatives(u, v, h, constants)
-    apply_time_derivatives(u, v, h, du_dt, dv_dt, dh_dt, dt)
+    np.copyto(dst=h, src=np.roll(h, 1, axis=1))
 
 def simulate_and_draw_frame(frame_number, simulate_frame, plot_surface):
     ''' Animation function to be passed to matplotlib.animation.FuncAnimation.
@@ -183,54 +181,11 @@ class Timestepper():
                 ).format(dt, E, r, error_below_threshold))
 
     def step_forwards(self):
-        steps = 0
-        dt = self.dt
-        while True:
-            # bail out if we're not converging
-            if steps > self.max_steps:
-                raise RuntimeError('Not converged after {} steps'.format(steps))
-            steps += 1
+        self.timestep(self.u, self.v, self.h, self.dt)
+        self.t += self.dt
+        return 1, self.dt
 
-            # reset temporary arrays
-            np.copyto(dst=self.u1, src=self.u)
-            np.copyto(dst=self.v1, src=self.v)
-            np.copyto(dst=self.h1, src=self.h)
-            np.copyto(dst=self.u2, src=self.u)
-            np.copyto(dst=self.v2, src=self.v)
-            np.copyto(dst=self.h2, src=self.h)
-
-            # take one step forwards by dt
-            self.timestep(self.u1, self.v1, self.h1, dt)
-
-            # take two half-steps forwards by dt/2
-            self.timestep(self.u2, self.v2, self.h2, dt / 2)
-            self.timestep(self.u2, self.v2, self.h2, dt / 2)
-
-            # compare the two in order to generate an error estimate
-            # only comparing height field here: could go further and compare u
-            # and v too, but this seems to be OK
-            E = np.linalg.norm(self.h2[1:-1, 1:-1] - self.h1[1:-1, 1:-1],
-                               ord=np.inf)
-            r = E / dt
-
-            # break out if the error is accceptible
-            # TODO if the error is very low, consider increasing dt
-            error_below_threshold = (r < self.epsilon)
-            self.debug_log(dt, E, r, error_below_threshold)
-            if error_below_threshold:
-                self.dt = dt
-                self.t += dt
-
-                # combine the two solutions to get the lowest error possible
-                # TODO replace with a swap for speed
-                np.copyto(dst=self.u, src=(2 * self.u2 - self.u1))
-                np.copyto(dst=self.v, src=(2 * self.v2 - self.v1))
-                np.copyto(dst=self.h, src=(2 * self.h2 - self.h1))
-                return steps, dt
-
-            # repeat with a reduced dt if the error is too high
-            dt = 0.9 * self.epsilon * dt / r
-            logging.debug('Reduced dt to {}'.format(dt))
+    total_frames = 0
 
     def step_to_next_frame(self):
         # step until we are past the target time. will overstep a bit, but it
@@ -240,8 +195,10 @@ class Timestepper():
         while self.t < target_time:
             steps, _ = self.step_forwards()
             total_steps += steps
+        self.total_frames += 1
 
         print ('time = {:.2f}s in {} timesteps'.format(self.t, total_steps))
+        print (self.total_frames)
 
 def parse_args(argv):
     ''' Parse an array of command-line options into a argparse.Namespace '''
@@ -255,6 +212,7 @@ def parse_args(argv):
     parser.add_argument('--wind', type=float, default=1.e-8)
     parser.add_argument('--dx', type=float, default=500)
     parser.add_argument('--dy', type=float, default=500)
+    parser.add_argument('--duration', type=float)
     parser.add_argument('--h_background', type=float, default=4000)
     parser.add_argument('--speed-multiplier', type=int, default=60000)
     parser.add_argument('--fps', type=int, default=24)
@@ -285,19 +243,26 @@ def main(argv):
     axes = figure.add_subplot(111, projection='3d')
     clear_axes_and_plot_surface(axes, x, y, h)
 
+    #return 0
+
     # create timestepper object. this is used to progress the simulation
     seconds_per_frame = args.speed_multiplier / args.fps
     timestep_function = lambda u, v, h, dt: timestep(u, v, h, dt, args)
     timestepper = Timestepper(u, v, h, timestep_function, seconds_per_frame)
 
     # create loop to progress the simulation and updates the plot
-    millseconds_per_frame = MILLISECONDS_PER_SECOND / args.fps
-    _ = animation.FuncAnimation(figure,
-            simulate_and_draw_frame,
-            fargs=(lambda: clear_axes_and_plot_surface(axes, x, y, h),
-                   lambda: timestepper.step_to_next_frame()),
-            interval=millseconds_per_frame)
-    plt.show()
+    three_d_plot = True
+    if (three_d_plot):
+        millseconds_per_frame = MILLISECONDS_PER_SECOND / args.fps
+        _ = animation.FuncAnimation(figure,
+                simulate_and_draw_frame,
+                fargs=(lambda: clear_axes_and_plot_surface(axes, x, y, h),
+                       lambda: timestepper.step_to_next_frame()),
+                interval=1)
+        plt.show()
+    else:
+        for frame in range(0, 53):
+            timestepper.step_to_next_frame()
 
 if __name__ == '__main__':
     main(sys.argv)
