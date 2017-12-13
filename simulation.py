@@ -120,39 +120,6 @@ def reflect_ghost_cells(u, v, h):
 def timestep(u, v, h, dt, constants):
     np.copyto(dst=h, src=np.roll(h, 1, axis=1))
 
-def simulate_and_draw_frame(frame_number, simulate_frame, plot_surface):
-    ''' Animation function to be passed to matplotlib.animation.FuncAnimation.
-    Progresses the simulation forwards and then updates the image.
-
-    Arguments:
-        frame_number: (unused) the number of the frame that should be updated
-        simulate_frame: a function that progresses a simulation to the next
-            frame. It takes no arguments and has no return value.
-        plot_surface: a function that creates a new surface image. It takes
-            no arguments but returns the matplotlib artist.
-
-    Returns:
-        An iterable of artists that matplotlib should update
-    '''
-    simulate_frame()
-    return [plot_surface()]
-
-def clear_axes_and_plot_surface(axes, x, y, h):
-    ''' Plot the current height grid as a 3D surface. The z-axis is hard-coded
-    to [0, 1] regardless of the height values.
-
-    Arguments:
-        axes: a matplotlib.Axes3D object. It will be clear()'d on every call,
-            so don't set any options on it!
-        x, y: arrays of the x and y coordinates. These arrays should be the same
-            size as the height field array without ghost values.
-        h: height field, including ghost values
-    '''
-    axes.clear()
-    axes.set_zlim(0, 1)
-    clipped = h[1:-1, 1:-1]
-    return axes.plot_surface(x, y, clipped, cmap=cm.coolwarm, vmin=0, vmax=1)
-
 class Timestepper():
 
     def __init__(self, u, v, h, timestep, seconds_per_frame, t=0, epsilon=1e-5,
@@ -200,6 +167,12 @@ class Timestepper():
         print ('time = {:.2f}s in {} timesteps'.format(self.t, total_steps))
         print (self.total_frames)
 
+
+def main_loop(_, image, h, timestepper):
+    timestepper.step_to_next_frame()
+    image.set_data(h)
+    return [image]
+
 def parse_args(argv):
     ''' Parse an array of command-line options into a argparse.Namespace '''
     parser = argparse.ArgumentParser()
@@ -235,34 +208,20 @@ def main(argv):
     u, v, h = create_grids(args.ni, args.nj)
     create_bump_in_centre(h)
 
-    # create initial plot
-    x = np.linspace(0, 100, args.ni)
-    y = np.linspace(0, 100, args.nj)
-    x, y = np.meshgrid(x, y)
-    figure = plt.figure()
-    axes = figure.add_subplot(111, projection='3d')
-    clear_axes_and_plot_surface(axes, x, y, h)
-
-    #return 0
-
     # create timestepper object. this is used to progress the simulation
     seconds_per_frame = args.speed_multiplier / args.fps
     timestep_function = lambda u, v, h, dt: timestep(u, v, h, dt, args)
     timestepper = Timestepper(u, v, h, timestep_function, seconds_per_frame)
 
+    # initial plot
+    image = plt.imshow(h, cmap='hot')
+
     # create loop to progress the simulation and updates the plot
-    three_d_plot = True
-    if (three_d_plot):
-        millseconds_per_frame = MILLISECONDS_PER_SECOND / args.fps
-        _ = animation.FuncAnimation(figure,
-                simulate_and_draw_frame,
-                fargs=(lambda: clear_axes_and_plot_surface(axes, x, y, h),
-                       lambda: timestepper.step_to_next_frame()),
-                interval=1)
-        plt.show()
-    else:
-        for frame in range(0, 53):
-            timestepper.step_to_next_frame()
+    millseconds_per_frame = MILLISECONDS_PER_SECOND / args.fps
+    _ = animation.FuncAnimation(plt.gcf(),
+            main_loop, fargs=(image, h, timestepper),
+            interval=1)
+    plt.show()
 
 if __name__ == '__main__':
     main(sys.argv)
