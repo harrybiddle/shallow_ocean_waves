@@ -38,9 +38,6 @@ class TestCompute(NumpyTestCase):
         self.rand_u = np.random.rand(6, 8)
         self.rand_v = np.random.rand(7, 7)
 
-        self.constants = SimpleNamespace(gravity=2.0, wind=1.0, dx=1.9, dy=1.9,
-                                         drag=-1.5, h_background=100.2)
-
     def compute_time_derivatives(self, u=np.zeros((6, 8)), v=np.zeros((7, 7)),
                                  h=np.zeros((6, 7)), gravity=0.0, wind=0.0,
                                  dx=1.0, dy=1.0, drag=0.0, h_background=1.0):
@@ -67,16 +64,18 @@ class TestCompute(NumpyTestCase):
         rand_u_copy = np.array(self.rand_u, copy=True)
         rand_v_copy = np.array(self.rand_v, copy=True)
 
-        compute_time_derivatives(self.rand_u, self.rand_v, self.rand_h,
-                                 self.constants)
+        self.compute_time_derivatives(u=self.rand_u, v=self.rand_v,
+                                      h=self.rand_h, gravity=1.0, wind=1.0,
+                                      drag=1.0)
 
         np.testing.assert_equal(rand_h_copy, self.rand_h)
         np.testing.assert_equal(rand_u_copy, self.rand_u)
         np.testing.assert_equal(rand_v_copy, self.rand_v)
 
     def test_compute_time_derivatives_shape(self):
-        r = compute_time_derivatives(self.rand_u, self.rand_v, self.rand_h,
-                                     self.constants)
+        r = self.compute_time_derivatives(u=self.rand_u, v=self.rand_v,
+                                          h=self.rand_h, gravity=1.0, wind=1.0,
+                                          drag=1.0)
         du_dt, dv_dt, dh_dt = r
         self.assertEqual(du_dt.shape[0], self.rand_u.shape[0])
         self.assertEqual(du_dt.shape[1], self.rand_u.shape[1] - 2)
