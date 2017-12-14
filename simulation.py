@@ -4,7 +4,7 @@ import math
 from random import randint, random
 import sys
 
-from humanfriendly import parse_timespan, parse_length
+from humanfriendly import parse_timespan, parse_length, format_timespan
 from pyqtgraph.Qt import QtCore, QtGui
 import numpy as np
 import pyqtgraph as pg
@@ -31,9 +31,9 @@ import pyqtgraph as pg
 #      .       |       |       |       .
 #      ...~v~..---~v~-----~v~---..~v~...
 #      .       .       .       .       .
-#     ~u~ ~h~  ~u~~h~ ~u~ ~h~ ~u~ ~h~ ~u~      h is shape (nj + 2, ni + 2)
-#      .       .       .       .       .       u is shape (nj + 2, ni + 3)
-#      ...~v~.....~v~.....~v~.....~v~...       v is shape (nj + 3, ni + 2)
+#     ~u~ ~h~  ~u~~h~ ~u~ ~h~ ~u~ ~h~ ~u~      h is shape (n + 2, n + 2)
+#      .       .       .       .       .       u is shape (n + 2, n + 3)
+#      ...~v~.....~v~.....~v~.....~v~...       v is shape (n + 3, n + 2)
 #   (1, 0)                           (4, 4)
 #
 # Governing equations:
@@ -44,11 +44,11 @@ import pyqtgraph as pg
 
 ONE_MILLISECOND = 1
 
-def create_grids(ni, nj):
-    u = np.zeros((nj + 2, ni + 3))
-    v = np.zeros((nj + 3, ni + 2))
-    h = np.zeros((nj + 2, ni + 2))
-    speed = np.zeros((nj, ni)) # note that speed doesn't have ghost values
+def create_grids(n):
+    u = np.zeros((n + 2, n + 3))
+    v = np.zeros((n + 3, n + 2))
+    h = np.zeros((n + 2, n + 2))
+    speed = np.zeros((n, n)) # note that speed doesn't have ghost values
     return u, v, h, speed
 
 def create_central_bump(nj, ni, width=0.25):
@@ -57,7 +57,7 @@ def create_central_bump(nj, ni, width=0.25):
     example, WIDTH=0.25 corresponds to a quarter of the grid width.
     '''
     def wave_shape(x):
-        ''' A wave with unit height at X=0, going down to zero at X=width/2 '''
+        ''' A wave with unt height at X=0, going down to zero at X=width/2 '''
         x = np.clip(x, a_min=0, a_max=width / 2)
         y = math.cos(2 * math.pi * x / width) + 1
         return y / 2 # normalise to [0, 1]
@@ -83,7 +83,7 @@ class RandomDropper():
         self.bump = create_central_bump(self.nj, self.ni)
 
     def add_drop_at_random_location(self):
-        random_shift = (randint(0, self.nj), randint(0, self.nj))
+        random_shift = (randint(0, self.nj), randint(0, self.ni))
         random_bump = np.roll(self.bump, random_shift, axis=(0, 1))
         self.h += random_bump
 
@@ -178,7 +178,7 @@ class AdapativeTwoStep():
             dt, E, r, error_below_threshold))
 
     def _timestep(self):
-        ''' Move the simulation one timestep forwards. We will initially attempt
+        ''' Move the simulation one timestep forwards. We will intially attempt
         to step forward by an amount self.dt, but if the error is too large,
         self.dt will be reduced until it is below the required threshold '''
 
@@ -231,7 +231,7 @@ class AdapativeTwoStep():
 
     def step_to_next_frame(self):
         # possibly add in a new water drop
-        if random() < self.constants.drop_probability:
+        if random() < 1 / self.constants.frames_per_drop:
             self.dropper.add_drop_at_random_location()
 
         # step until we are past the target time. will overstep a bit, but it
@@ -245,7 +245,9 @@ class AdapativeTwoStep():
         # compute the speed
         compute_speed(self.u, self.v, self.speed)
 
-        print ('time = {:.2f}s in {} timesteps'.format(self.t, total_steps))
+        human_friendly_time = format_timespan(self.t)
+        print ('time = {} in {} timesteps'.format(human_friendly_time,
+                                                  total_steps))
 
 class Video():
     ''' Given a image and a callback function that mutates it to the next frame,
@@ -269,8 +271,8 @@ class Video():
         self.image = pg.ImageItem()
         self.view = self.win.addViewBox()
         self.view.addItem(self.image)
-        nj, ni = self.pixels.shape
-        self.view.setRange(QtCore.QRectF(0, 0, nj, ni))
+        n, n = self.pixels.shape
+        self.view.setRange(QtCore.QRectF(0, 0, n, n))
 
     def _progress_frame_and_update_image(self):
         self.progress_frame()
@@ -290,33 +292,40 @@ class Video():
 
 def parse_args(argv):
     ''' Parse an array of command-line options into a argparse.Namespace '''
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--ni', type=int, default=200)
-    parser.add_argument('--nj', type=int, default=200)
-    parser.add_argument('-n', type=int)
-    parser.add_argument('--drag', type=float, default=1.E-6)
-    parser.add_argument('--gravity', type=float, default=9.8e-4)
-    parser.add_argument('--width', type=float, default=100000)
-    parser.add_argument('--height', type=float, default=100000)
-    parser.add_argument('--duration', type=float)
-    parser.add_argument('--depth', default='4km')
-    parser.add_argument('--time-per-frame', default='1 hour')
-    parser.add_argument('--drop-probability', type=float, default=1e-2)
-    parser.add_argument('--maximum-speed', type=float, default=0.003)
-    parser.add_argument('-v', '--debug', action='store_true')
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-n', type=int, default=200,
+                        help='Size of simulation grid; an n x n grid')
+    parser.add_argument('--decay', default='1 week',
+                        help='The half-life of a wave')
+    parser.add_argument('--gravity', type=float, default=9.8e-4,
+                        help='The planet\'s gravity, in metres per second')
+    parser.add_argument('--width', default='100km',
+                        help='Circumference of the planet, travelling east-west')
+    parser.add_argument('--height', default='100km',
+                        help='Circumference of the planet, travelling north-south')
+    parser.add_argument('--depth', default='4km',
+                        help='Average depth of the planet\'s ocean')
+    parser.add_argument('--time-per-frame', default='1 hour',
+                        help='How much planetary time should pass in each frame of animation')
+    parser.add_argument('--frames-per-drop', type=int, default=100,
+                        help='On average, how many frames before a new drop of water is created')
+    parser.add_argument('--maximum-speed', type=float, default=0.003,
+                        help='For colouring the visualisation: the speed that should correspond to the lightest colour')
+    parser.add_argument('-v', '--debug', action='store_true',
+                        help='Verbose logging')
     args = parser.parse_args(argv[1:])
 
-    # parse time units
+    # parse human-readable unts
     args.seconds_per_frame = parse_timespan(args.time_per_frame)
     args.h_background = parse_length(args.depth)
-
-    # pick --n option over --ni and --nj, if supplied
-    if args.n is not None:
-        args.ni = args.nj = args.n
+    width = parse_length(args.width)
+    height = parse_length(args.height)
+    args.drag = 1 / parse_timespan(args.decay)
 
     # set dx and dy
-    args.dx = args.width / args.ni
-    args.dy = args.width / args.nj
+    args.dx = width / args.n
+    args.dy = height / args.n
 
     return args
 
@@ -325,14 +334,14 @@ def main(argv):
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
 
-    # starting arrays and initial conditions
-    u, v, h, speed = create_grids(args.ni, args.nj)
+    # starting arrays and intial conditions
+    u, v, h, speed = create_grids(args.n)
 
     # create an object that adds water drops. since the shape of the drop
     # involves cosines and is a bit slow, we use this object to cache it
     dropper = RandomDropper(h)
 
-    # create an initial drop to get things going
+    # create an intial drop to get things going
     dropper.add_drop_at_random_location()
 
     # create timestepper object, which will be used to progress the simulation

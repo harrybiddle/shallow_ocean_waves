@@ -18,7 +18,7 @@ def create_new_test_array():
 class TestStartingArrays(unittest.TestCase):
 
     def test_grid_shapes(self):
-        u, v, h, speed = create_grids(10, 10)
+        u, v, h, speed = create_grids(10)
         self.assertEqual((12, 12), h.shape)
         self.assertEqual((12, 13), u.shape)
         self.assertEqual((13, 12), v.shape)
@@ -129,24 +129,6 @@ class TestBoundary(unittest.TestCase):
                              [(5), (8), (1), (5), (8), (5), (8)]])
         np.testing.assert_equal(h, expected)
 
-class TestArgumentParsing(unittest.TestCase):
-
-    def check_ni_nj(self, ni=None, nj=None, n=None):
-        argv = [None]
-        if ni is not None:
-            argv.extend(['--ni', str(ni)])
-        if nj is not None:
-            argv.extend(['--nj', str(nj)])
-        if n is not None:
-            argv.extend(['-n', str(n)])
-        args = parse_args(argv)
-        return args.ni, args.nj
-
-    def test_n_overides_ni_and_nj_options(self):
-        self.assertEqual((10, 12), self.check_ni_nj(ni=10, nj=12))
-        self.assertEqual((4, 4), self.check_ni_nj(n=4, ni=10, nj=12))
-        self.assertEqual((4, 4), self.check_ni_nj(n=4))
-
 class TestSolverAgainstAnalyticalSolutions(unittest.TestCase):
 
     def test_drag_component(self):
@@ -168,14 +150,11 @@ class TestSolverAgainstAnalyticalSolutions(unittest.TestCase):
         u_0 = 1.5
         v_0 = - 2.5
 
-        constants = parse_args([None,
-                               '-n', str(n),
-                               # '--rotation', '0',
-                               '--gravity', '0',
-                               '--drag', str(drag)])
+        constants = SimpleNamespace(n=n, gravity=0, drag=drag, dx=1, dy=1,
+                                    h_background=0)
 
         # initial conditions
-        u, v, h, _ = create_grids(n, n)
+        u, v, h, _ = create_grids(n)
         u[:] = u_0
         v[:] = v_0
 
