@@ -39,28 +39,32 @@ surrounded by ~,~ ) to implement the wrapped-boundary condition:
 '''
 
 ONE_MILLISECOND = 1
+DARK_BLUE = (0, 114, 255)
+LIGHT_BLUE = (14, 210, 247)
 
 def create_grids(n):
     u = np.zeros((n + 2, n + 3))
     v = np.zeros((n + 3, n + 2))
     h = np.zeros((n + 2, n + 2))
-    speed = np.zeros((n, n)) # note that speed doesn't have ghost values
+    speed = np.zeros((n, n))  # note that speed doesn't have ghost values
     return u, v, h, speed
 
 def create_central_bump(nj, ni, width=0.25):
-    ''' Creates a grid with a small cosine-like 'bump' in the centre. The height
-    is 1 and the diameter of the base is a WIDTH fraction of the grid width. For
-    example, WIDTH=0.25 corresponds to a quarter of the grid width.
+    ''' Creates a grid with a small cosine-like 'bump' in the centre. The
+    height is 1 and the diameter of the base is a WIDTH fraction of the grid
+    width. For example, WIDTH=0.25 corresponds to a quarter of the grid width.
     '''
     def wave_shape(x):
         ''' A wave with unt height at X=0, going down to zero at X=width/2 '''
         x = np.clip(x, a_min=0, a_max=width / 2)
         y = math.cos(2 * math.pi * x / width) + 1
-        return y / 2 # normalise to [0, 1]
+        return y / 2  # normalise to [0, 1]
+
+    def distance_to_grid_centre(j, i):
+        return math.sqrt((i - ni / 2) ** 2 + (j - nj / 2) ** 2)
 
     def normalised_distance_to_grid_centre(j, i):
-        d = lambda i, j: math.sqrt((i - ni / 2) ** 2 + (j - nj / 2) ** 2)
-        return d(i, j) / d(0, 0)
+        return distance_to_grid_centre(i, j) / distance_to_grid_centre(0, 0)
 
     bump = np.zeros((nj, ni))
     for j in range(0, nj):
@@ -72,7 +76,6 @@ def create_central_bump(nj, ni, width=0.25):
 class RandomDropper():
     ''' Given a height field, can be used to add water 'drops' (i.e.
     cosine-like waves) at random locations '''
-
     def __init__(self, h):
         self.h = h[1:-1, 1:-1]
         self.nj, self.ni = self.h.shape
@@ -85,22 +88,22 @@ class RandomDropper():
 
 def reflect_boundary(array, right_boundary=1, bottom_boundary=1):
     ''' Fills ghost cells with reflected values of the non-ghost cells. Ghost
-    cells are in a boundary of a width 1 on the left and top, and RIGHT_BOUNDARY
-    and BOTTOM_BOUNDARY on the right and bottom respectively '''
+    cells are in a boundary of a width 1 on the left and top, and
+    RIGHT_BOUNDARY and BOTTOM_BOUNDARY on the right and bottom respectively'''
     rb, bb = right_boundary, bottom_boundary
     interior = array[1:-bb, 1:-rb]
 
-    array[0, 0]     = interior[-1, -1]               # top left cell
-    array[1:-bb, 0] = interior[:, -1]                # left column
-    array[0, 1:-rb] = interior[-1, :]                # top row
+    array[0, 0]     = interior[-1, -1]                # top left cell
+    array[1:-bb, 0] = interior[:, -1]                 # left column
+    array[0, 1:-rb] = interior[-1, :]                 # top row
     for i in range(1, rb + 1):
-        array[1:-bb, -i] = interior[:, rb - i]       # right column(s)
-        array[0, -i]     = interior[-1, rb - i]      # top right cell(s)
+        array[1:-bb, -i] = interior[:, rb - i]        # right column(s)
+        array[0, -i]     = interior[-1, rb - i]       # top right cell(s)
     for j in range(1, bb + 1):
-        array[-j, 1:-rb] = interior[bb - j, :]       # bottom rows(s)
-        array[-j, 0]     = interior[bb - j, -1]      # bottom left cell(s)
+        array[-j, 1:-rb] = interior[bb - j, :]        # bottom rows(s)
+        array[-j, 0]     = interior[bb - j, -1]       # bottom left cell(s)
         for i in range(1, rb + 1):
-            array[-j, -i] = interior[bb - j, rb - i]           # bottom right cell(s)
+            array[-j, -i] = interior[bb - j, rb - i]  # bottom right cell(s)
 
 def reflect_ghost_cells(u, v, h):
     reflect_boundary(u, right_boundary=2)
@@ -145,7 +148,8 @@ def timestep(u, v, h, dt, constants):
 def compute_speed(u, v, speed):
     u_cell_centered = (u[1:-1, 1:-2] + u[1:-1, 2:-1]) * 0.5
     v_cell_centered = (v[1:-2, 1:-1] + v[2:-1, 1:-1]) * 0.5
-    np.copyto(dst=speed, src=np.sqrt(u_cell_centered**2 + v_cell_centered ** 2))
+    np.copyto(dst=speed,
+              src=np.sqrt(u_cell_centered**2 + v_cell_centered ** 2))
 
 class AdapativeTwoStep():
 
@@ -223,7 +227,7 @@ class AdapativeTwoStep():
 
             # repeat with a reduced dt if the error is too high
             dt = 0.9 * self.epsilon * dt / r
-            logging.debug ('Reduced dt to {}'.format(dt))
+            logging.debug('Reduced dt to {}'.format(dt))
 
     def step_to_next_frame(self):
         # possibly add in a new water drop
@@ -257,7 +261,7 @@ class Video():
         '''
         self.pixels = pixels
         self.progress_frame = progress_frame
-        colours = [(0,114,255), (14,210,247)]
+        colours = [DARK_BLUE, LIGHT_BLUE]
         self.cmap = pg.ColorMap(pos=[0, max_pixel], color=colours)
 
     def _create_qt_application(self):
@@ -298,17 +302,22 @@ def parse_args(argv):
     parser.add_argument('--gravity', type=float, default=9.8e-4,
                         help='The planet\'s gravity, in metres per second')
     parser.add_argument('--width', default='100km',
-                        help='Circumference of the planet, travelling east-west')
+                        help=('Circumference of the planet, travelling '
+                              'east-west'))
     parser.add_argument('--height', default='100km',
-                        help='Circumference of the planet, travelling north-south')
+                        help=('Circumference of the planet, travelling '
+                              'north-south'))
     parser.add_argument('--depth', default='4km',
                         help='Average depth of the planet\'s ocean')
     parser.add_argument('--time-per-frame', default='1 hour',
-                        help='How much planetary time should pass in each frame of animation')
+                        help=('How much planetary time should pass in each '
+                              'frame of animation'))
     parser.add_argument('--frames-per-drop', type=int, default=100,
-                        help='On average, how many frames before a new drop of water is created')
+                        help=('On average, how many frames before a new drop '
+                              'of water is created'))
     parser.add_argument('--maximum-speed', type=float, default=0.003,
-                        help='For colouring the visualisation: the speed that should correspond to the lightest colour')
+                        help=('For colouring the visualisation: the speed '
+                              'that should correspond to the lightest colour'))
     parser.add_argument('-v', '--debug', action='store_true',
                         help='Verbose logging')
     args = parser.parse_args(argv[1:])
