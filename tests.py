@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from simulation import *
+from shallow_ocean_waves import *
 
 def create_new_test_array():
     return np.array([[1, 4, 8, 2, 4, 8, 1],

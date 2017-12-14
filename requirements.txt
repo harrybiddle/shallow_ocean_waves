@@ -1,0 +1,4 @@
+humanfriendly
+pyqtgraph
+pyopengl
+pyqt5

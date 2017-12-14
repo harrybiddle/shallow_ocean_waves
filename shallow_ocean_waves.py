@@ -1,3 +1,5 @@
+#! /usr/bin/env python3
+
 import argparse
 import logging
 import math
@@ -9,38 +11,32 @@ from pyqtgraph.Qt import QtCore, QtGui
 import numpy as np
 import pyqtgraph as pg
 
-# make it the number of simulation cells
-# dictate: cell centered, staggered i/j, etc.
-# concept of worldspace and interpolation
-#
-# This is a cell centered grid, wrapping
-# around in Y, zero at X:
-#
-#   (0, 0)  --- i --->               (0, 4)
-#      ...~v~.....~v~.....~v~.....~v~...
-#  |    .       .       .       .       .
-#  j  ~u~ ~h~ ~u~ ~h~ ~u~ ~h~ ~u~ ~h~ ~u~
-#  |   .       .       .       .       .
-#  v   ...~v~..----v-------v----..~v~..
-#      .       |       |       |       .
-#     ~u~ ~h~  u   h   u   h  ~u~ ~h~  ~u~
-#      .       |       |       |       .
-#      ...~v~..|---v ---.--v --|..~v~...
-#      .       |       |       |       .
-#     ~u~ ~h~  u   h   u   h  ~u~ ~h~ ~u~
-#      .       |       |       |       .
-#      ...~v~..---~v~-----~v~---..~v~...
-#      .       .       .       .       .
-#     ~u~ ~h~  ~u~~h~ ~u~ ~h~ ~u~ ~h~ ~u~      h is shape (n + 2, n + 2)
-#      .       .       .       .       .       u is shape (n + 2, n + 3)
-#      ...~v~.....~v~.....~v~.....~v~...       v is shape (n + 3, n + 2)
-#   (1, 0)                           (4, 4)
-#
-# Governing equations:
-#
-#  dU/dT = - gravity * dH/dX - drag * U
-#  dV/dT = - gravity * dH/dY - drag * V
-#  dH/dT = - ( dU/dX + dV/dY ) * Hbackground / dX
+'''
+Note: this simulation operates on three main grids: u, v, and h. Velocity grids
+are staggered at cell faces to avoid discretistion errors, and all grids have
+ghost cells (identified in the picture below as cells with .... and values
+surrounded by ~,~ ) to implement the wrapped-boundary condition:
+
+          (0, 0)  --- i --->               (0, 4)
+             ...~v~.....~v~.....~v~.....~v~...
+         |    .       .       .       .       .
+         j  ~u~ ~h~ ~u~ ~h~ ~u~ ~h~ ~u~ ~h~ ~u~
+         |   .       .       .       .       .
+         v   ...~v~..----v-------v----..~v~..
+             .       |       |       |       .
+            ~u~ ~h~  u   h   u   h  ~u~ ~h~  ~u~
+             .       |       |       |       .
+             ...~v~..|---v ---.--v --|..~v~...
+             .       |       |       |       .
+            ~u~ ~h~  u   h   u   h  ~u~ ~h~ ~u~
+             .       |       |       |       .
+             ...~v~..---~v~-----~v~---..~v~...
+             .       .       .       .       .
+            ~u~ ~h~  ~u~~h~ ~u~ ~h~ ~u~ ~h~ ~u~
+             .       .       .       .       .
+             ...~v~.....~v~.....~v~.....~v~...
+          (1, 0)                           (4, 4)
+'''
 
 ONE_MILLISECOND = 1
 
@@ -293,6 +289,7 @@ class Video():
 def parse_args(argv):
     ''' Parse an array of command-line options into a argparse.Namespace '''
     parser = argparse.ArgumentParser(
+        description='Simulating small waves on the surface of a small planet.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-n', type=int, default=200,
                         help='Size of simulation grid; an n x n grid')
