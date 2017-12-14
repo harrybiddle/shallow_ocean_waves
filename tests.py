@@ -17,12 +17,6 @@ class NumpyTestCase(unittest.TestCase):
                          [1, 1, 7, 1, 5, 0, 5],
                          [2, 3, 0, 0, 7, 0, 7]])
 
-    def assert_arrays_equal(self, a, b):
-        np.testing.assert_equal(a, b)
-
-    def assert_arrays_unequal(self, a, b):
-        self.assertFalse(np.array_equal(a, b))
-
 class TestStartingArrays(NumpyTestCase):
 
     def test_grid_shapes(self):
@@ -44,10 +38,6 @@ class TestCompute(NumpyTestCase):
         self.rand_u = np.random.rand(6, 8)
         self.rand_v = np.random.rand(7, 7)
 
-        self.rand_h_copy = np.array(self.rand_h, copy=True)
-        self.rand_u_copy = np.array(self.rand_u, copy=True)
-        self.rand_v_copy = np.array(self.rand_v, copy=True)
-
         self.constants = SimpleNamespace(gravity=2.0, wind=1.0, dx=1.9, dy=1.9,
                                          drag=-1.5, h_background=100.2)
 
@@ -57,11 +47,6 @@ class TestCompute(NumpyTestCase):
         constants = SimpleNamespace(gravity=gravity, wind=wind, dx=dx, dy=dy,
                                     drag=drag, h_background=h_background)
         return compute_time_derivatives(u, v, h, constants)
-
-    def assert_arrays_unchanged(self):
-        self.assert_arrays_equal(self.rand_h_copy, self.rand_h)
-        self.assert_arrays_equal(self.rand_u_copy, self.rand_u)
-        self.assert_arrays_equal(self.rand_v_copy, self.rand_v)
 
     def test_dh_dx_term(self):
         ''' Create a situation where du_dt = dh_dx * gravity, in order to
@@ -75,12 +60,19 @@ class TestCompute(NumpyTestCase):
                              [  6,   1,  -7,   8,  -2,  -2],
                              [  0,  -6,   6,  -4,   5,  -5],
                              [ -1,   3,   0,  -7,   7,  -7]]) * gravity
-        self.assert_arrays_equal(du_dt, expected)
+        np.testing.assert_equal(du_dt, expected)
 
     def test_compute_time_derivatives_does_not_change_input(self):
+        rand_h_copy = np.array(self.rand_h, copy=True)
+        rand_u_copy = np.array(self.rand_u, copy=True)
+        rand_v_copy = np.array(self.rand_v, copy=True)
+
         compute_time_derivatives(self.rand_u, self.rand_v, self.rand_h,
                                  self.constants)
-        self.assert_arrays_unchanged()
+
+        np.testing.assert_equal(rand_h_copy, self.rand_h)
+        np.testing.assert_equal(rand_u_copy, self.rand_u)
+        np.testing.assert_equal(rand_v_copy, self.rand_v)
 
     def test_compute_time_derivatives_shape(self):
         r = compute_time_derivatives(self.rand_u, self.rand_v, self.rand_h,
@@ -109,7 +101,7 @@ class TestBoundary(NumpyTestCase):
                              [(0),   2,   1,   8,   0, (2), (1)],
                              [(5),   1,   7,   1,   5, (1), (7)],
                              [(8), (8), (1), (5), (8), (8), (1)]])
-        self.assert_arrays_equal(u, expected)
+        np.testing.assert_equal(u, expected)
 
     def test_v_ghost_cells(self):
         v = self.create_new_test_array()
@@ -120,7 +112,7 @@ class TestBoundary(NumpyTestCase):
                              [(2),   2,   1,   8,   0,   2, (2)],
                              [(5), (8), (1), (5), (8), (5), (8)],
                              [(9), (3), (0), (0), (1), (9), (3)]])
-        self.assert_arrays_equal(v, expected)
+        np.testing.assert_equal(v, expected)
 
     def test_h_ghost_cells(self):
         h = self.create_new_test_array()
@@ -131,7 +123,7 @@ class TestBoundary(NumpyTestCase):
                              [(2),   2,   1,   8,   0,   2, (2)],
                              [(0),   1,   7,   1,   5,   0, (1)],
                              [(5), (8), (1), (5), (8), (5), (8)]])
-        self.assert_arrays_equal(h, expected)
+        np.testing.assert_equal(h, expected)
 
 class ParseArgs(unittest.TestCase):
 
