@@ -1,11 +1,10 @@
 import argparse
 import logging
 import math
-import random
-from random import randint
+from random import randint, random
 import sys
 
-from humanfriendly import parse_timespan
+from humanfriendly import parse_timespan, parse_length
 from pyqtgraph.Qt import QtCore, QtGui
 import numpy as np
 import pyqtgraph as pg
@@ -232,7 +231,7 @@ class AdapativeTwoStep():
 
     def step_to_next_frame(self):
         # possibly add in a new water drop
-        if random.random() < self.constants.drop_probability:
+        if random() < self.constants.drop_probability:
             self.dropper.add_drop_at_random_location()
 
         # step until we are past the target time. will overstep a bit, but it
@@ -300,7 +299,7 @@ def parse_args(argv):
     parser.add_argument('--width', type=float, default=100000)
     parser.add_argument('--height', type=float, default=100000)
     parser.add_argument('--duration', type=float)
-    parser.add_argument('--h_background', type=float, default=4000)
+    parser.add_argument('--depth', default='4km')
     parser.add_argument('--time-per-frame', default='1 hour')
     parser.add_argument('--drop-probability', type=float, default=1e-2)
     parser.add_argument('--maximum-speed', type=float, default=0.003)
@@ -309,6 +308,7 @@ def parse_args(argv):
 
     # parse time units
     args.seconds_per_frame = parse_timespan(args.time_per_frame)
+    args.h_background = parse_length(args.depth)
 
     # pick --n option over --ni and --nj, if supplied
     if args.n is not None:

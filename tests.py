@@ -138,7 +138,7 @@ class TestArgumentParsing(unittest.TestCase):
         if nj is not None:
             argv.extend(['--nj', str(nj)])
         if n is not None:
-            argv.extend(['--n', str(n)])
+            argv.extend(['-n', str(n)])
         args = parse_args(argv)
         return args.ni, args.nj
 
@@ -169,7 +169,7 @@ class TestSolverAgainstAnalyticalSolutions(unittest.TestCase):
         v_0 = - 2.5
 
         constants = parse_args([None,
-                               '--n', str(n),
+                               '-n', str(n),
                                # '--rotation', '0',
                                '--gravity', '0',
                                '--drag', str(drag)])
