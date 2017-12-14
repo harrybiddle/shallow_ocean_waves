@@ -31,7 +31,7 @@ class TestStartingArrays(NumpyTestCase):
         self.assertEqual(1, h[50, 50])
 
 
-class TestCompute(NumpyTestCase):
+class TestTimeDerivatives(NumpyTestCase):
 
     def setUp(self):
         self.rand_h = np.random.rand(6, 7)
