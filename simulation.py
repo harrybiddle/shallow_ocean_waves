@@ -5,6 +5,7 @@ import random
 from random import randint
 import sys
 
+from humanfriendly import parse_timespan
 from pyqtgraph.Qt import QtCore, QtGui
 import numpy as np
 import pyqtgraph as pg
@@ -163,8 +164,7 @@ class AdapativeTwoStep():
                 setattr(self, name, value)
 
         # take one frame to be the starting dt
-        self.seconds_per_frame = constants.speed_multiplier / constants.fps
-        self.dt = self.seconds_per_frame
+        self.dt = constants.seconds_per_frame
 
         # create temporary copies for the substeps
         self.u1 = np.array(u, copy=True)
@@ -237,7 +237,7 @@ class AdapativeTwoStep():
 
         # step until we are past the target time. will overstep a bit, but it
         # doesn't make much of a visual difference
-        target_time = self.t + self.seconds_per_frame
+        target_time = self.t + self.constants.seconds_per_frame
         total_steps = 0
         while self.t < target_time:
             steps = self._timestep()
@@ -301,12 +301,14 @@ def parse_args(argv):
     parser.add_argument('--height', type=float, default=100000)
     parser.add_argument('--duration', type=float)
     parser.add_argument('--h_background', type=float, default=4000)
-    parser.add_argument('--speed-multiplier', type=int, default=60000)
-    parser.add_argument('--fps', type=int, default=24)
+    parser.add_argument('--time-per-frame', default='1 hour')
     parser.add_argument('--drop-probability', type=float, default=1e-2)
     parser.add_argument('--maximum-speed', type=float, default=0.003)
     parser.add_argument('-v', '--debug', action='store_true')
     args = parser.parse_args(argv[1:])
+
+    # parse time units
+    args.seconds_per_frame = parse_timespan(args.time_per_frame)
 
     # pick --n option over --ni and --nj, if supplied
     if args.n is not None:
