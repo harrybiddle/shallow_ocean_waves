@@ -7,17 +7,15 @@ import numpy as np
 
 from simulation import *
 
-class NumpyTestCase(unittest.TestCase):
+def create_new_test_array():
+    return np.array([[1, 4, 8, 2, 4, 8, 1],
+                     [4, 8, 1, 5, 8, 5, 5],
+                     [2, 3, 0, 0, 1, 9, 1],
+                     [8, 2, 1, 8, 0, 2, 4],
+                     [1, 1, 7, 1, 5, 0, 5],
+                     [2, 3, 0, 0, 7, 0, 7]])
 
-    def create_new_test_array(self):
-        return np.array([[1, 4, 8, 2, 4, 8, 1],
-                         [4, 8, 1, 5, 8, 5, 5],
-                         [2, 3, 0, 0, 1, 9, 1],
-                         [8, 2, 1, 8, 0, 2, 4],
-                         [1, 1, 7, 1, 5, 0, 5],
-                         [2, 3, 0, 0, 7, 0, 7]])
-
-class TestStartingArrays(NumpyTestCase):
+class TestStartingArrays(unittest.TestCase):
 
     def test_grid_shapes(self):
         u, v, h = create_grids(10, 10)
@@ -31,7 +29,7 @@ class TestStartingArrays(NumpyTestCase):
         self.assertEqual(1, h[50, 50])
 
 
-class TestTimeDerivatives(NumpyTestCase):
+class TestTimeDerivatives(unittest.TestCase):
 
     def setUp(self):
         self.rand_h = np.random.rand(6, 7)
@@ -48,7 +46,7 @@ class TestTimeDerivatives(NumpyTestCase):
     def test_dh_dx_term(self):
         ''' Create a situation where du_dt = dh_dx * gravity, in order to
         test this term '''
-        h = self.create_new_test_array()
+        h = create_new_test_array()
         gravity = 2
         du_dt, _, _ = self.compute_time_derivatives(h=h, gravity=gravity)
         expected = np.array([[ -3,  -4,   6,  -2,  -4,   7],
@@ -84,7 +82,7 @@ class TestTimeDerivatives(NumpyTestCase):
         self.assertEqual(dh_dt.shape, self.rand_h.shape)
 
 
-class TestBoundary(NumpyTestCase):
+class TestBoundary(unittest.TestCase):
     ''' Check that boundary reflection functions are working. In the expected
     arrays below ghost values are written in parentheses for clarity '''
 
@@ -92,7 +90,7 @@ class TestBoundary(NumpyTestCase):
         self.dummy = np.zeros((10, 10))
 
     def test_u_ghost_cells(self):
-        u = self.create_new_test_array()
+        u = create_new_test_array()
         reflect_ghost_cells(u, self.dummy, self.dummy)
         expected = np.array([[(5), (1), (7), (1), (5), (1), (7)],
                              [(8),   8,   1,   5,   8, (8), (1)],
@@ -103,7 +101,7 @@ class TestBoundary(NumpyTestCase):
         np.testing.assert_equal(u, expected)
 
     def test_v_ghost_cells(self):
-        v = self.create_new_test_array()
+        v = create_new_test_array()
         reflect_ghost_cells(self.dummy, v, self.dummy)
         expected = np.array([[(2), (2), (1), (8), (0), (2), (2)],
                              [(5),   8,   1,   5,   8,   5, (8)],
@@ -114,7 +112,7 @@ class TestBoundary(NumpyTestCase):
         np.testing.assert_equal(v, expected)
 
     def test_h_ghost_cells(self):
-        h = self.create_new_test_array()
+        h = create_new_test_array()
         reflect_ghost_cells(self.dummy, self.dummy, h)
         expected = np.array([[(0), (1), (7), (1), (5), (0), (1)],
                              [(5),   8,   1,   5,   8,   5, (8)],
@@ -124,7 +122,7 @@ class TestBoundary(NumpyTestCase):
                              [(5), (8), (1), (5), (8), (5), (8)]])
         np.testing.assert_equal(h, expected)
 
-class ParseArgs(unittest.TestCase):
+class TestArgumentParsing(unittest.TestCase):
 
     def check_ni_nj(self, ni=None, nj=None, n=None):
         argv = [None]
@@ -142,7 +140,7 @@ class ParseArgs(unittest.TestCase):
         self.assertEqual((4, 4), self.check_ni_nj(n=4, ni=10, nj=12))
         self.assertEqual((4, 4), self.check_ni_nj(n=4))
 
-class TestSolverAgainstAnalyticalSolutions(NumpyTestCase):
+class TestSolverAgainstAnalyticalSolutions(unittest.TestCase):
 
     def test_drag_component(self):
         ''' Set up the following equations, which have analytical solutions
