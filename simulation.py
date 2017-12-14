@@ -52,8 +52,8 @@ def create_grids(ni, nj):
     return u, v, h, speed
 
 def create_central_bump(nj, ni, width=0.25):
-    ''' Creates a grid with a small 'bump' in the centre. The bump has a height
-    1 and the diameter of the base is a WIDTH fraction of the grid width. For
+    ''' Creates a grid with a small cosine-like 'bump' in the centre. The height
+    is 1 and the diameter of the base is a WIDTH fraction of the grid width. For
     example, WIDTH=0.25 corresponds to a quarter of the grid width.
     '''
     def wave_shape(x):
@@ -74,6 +74,8 @@ def create_central_bump(nj, ni, width=0.25):
     return bump
 
 class RandomDropper():
+    ''' Given a height field, can be used to add water 'drops' (i.e.
+    cosine-like waves) at random locations '''
 
     def __init__(self, h):
         self.h = h[1:-1, 1:-1]
@@ -84,6 +86,30 @@ class RandomDropper():
         random_shift = (randint(0, self.nj), randint(0, self.nj))
         random_bump = np.roll(self.bump, random_shift, axis=(0, 1))
         self.h += random_bump
+
+def reflect_boundary(array, right_boundary=1, bottom_boundary=1):
+    ''' Fills ghost cells with reflected values of the non-ghost cells. Ghost
+    cells are in a boundary of a width 1 on the left and top, and RIGHT_BOUNDARY
+    and BOTTOM_BOUNDARY on the right and bottom respectively '''
+    rb, bb = right_boundary, bottom_boundary
+    interior = array[1:-bb, 1:-rb]
+
+    array[0, 0]     = interior[-1, -1]               # top left cell
+    array[1:-bb, 0] = interior[:, -1]                # left column
+    array[0, 1:-rb] = interior[-1, :]                # top row
+    for i in range(1, rb + 1):
+        array[1:-bb, -i] = interior[:, rb - i]       # right column(s)
+        array[0, -i]     = interior[-1, rb - i]      # top right cell(s)
+    for j in range(1, bb + 1):
+        array[-j, 1:-rb] = interior[bb - j, :]       # bottom rows(s)
+        array[-j, 0]     = interior[bb - j, -1]      # bottom left cell(s)
+        for i in range(1, rb + 1):
+            array[-j, -i] = interior[bb - j, rb - i]           # bottom right cell(s)
+
+def reflect_ghost_cells(u, v, h):
+    reflect_boundary(u, right_boundary=2)
+    reflect_boundary(v, bottom_boundary=2)
+    reflect_boundary(h)
 
 def compute_time_derivatives(u, v, h, c):
     ''' According to the equations:
@@ -113,30 +139,6 @@ def apply_time_derivatives(u, v, h, du_dt, dv_dt, dh_dt, dt):
     v[1:-1, :] += dv_dt * dt
     h += dh_dt * dt
 
-def reflect_boundary(array, right_boundary=1, bottom_boundary=1):
-    ''' Fills ghost cells with reflected values of the non-ghost cells. Ghost
-    cells are in a boundary of a width 1 on the left and top, and RIGHT_BOUNDARY
-    and BOTTOM_BOUNDARY on the right and bottom respectively '''
-    rb, bb = right_boundary, bottom_boundary
-    interior = array[1:-bb, 1:-rb]
-
-    array[0, 0]     = interior[-1, -1]               # top left cell
-    array[1:-bb, 0] = interior[:, -1]                # left column
-    array[0, 1:-rb] = interior[-1, :]                # top row
-    for i in range(1, rb + 1):
-        array[1:-bb, -i] = interior[:, rb - i]       # right column(s)
-        array[0, -i]     = interior[-1, rb - i]      # top right cell(s)
-    for j in range(1, bb + 1):
-        array[-j, 1:-rb] = interior[bb - j, :]       # bottom rows(s)
-        array[-j, 0]     = interior[bb - j, -1]      # bottom left cell(s)
-        for i in range(1, rb + 1):
-            array[-j, -i] = interior[bb - j, rb - i]           # bottom right cell(s)
-
-def reflect_ghost_cells(u, v, h):
-    reflect_boundary(u, right_boundary=2)
-    reflect_boundary(v, bottom_boundary=2)
-    reflect_boundary(h)
-
 def timestep(u, v, h, dt, constants):
     ''' Meat of the simulation: progress u, v and h forwards in time by a
     quantity dt using forward Euler '''
@@ -154,8 +156,7 @@ class AdapativeTwoStep():
     def __init__(self, u, v, h, speed, dropper, constants,
                  t=0, epsilon=1e-5, max_steps=1000):
         ''' Implements the simple Euler 2-Step Adaptive Step Size algorithm
-        from http://www.math.ubc.ca/~feldman/math/vble.pdf.
-        '''
+        from http://www.math.ubc.ca/~feldman/math/vble.pdf. '''
         # ingest all arguments to self
         for name, value in vars().items():
             if name != 'self':
@@ -173,7 +174,15 @@ class AdapativeTwoStep():
         self.v2 = np.array(v, copy=True)
         self.h2 = np.array(h, copy=True)
 
-    def _step_forwards(self):
+    def _debug_log(self, dt, E, r, error_below_threshold):
+        logging.debug('dt={}, E={}, r={}, sufficient accuracy? {}'.format(
+            dt, E, r, error_below_threshold))
+
+    def _timestep(self):
+        ''' Move the simulation one timestep forwards. We will initially attempt
+        to step forward by an amount self.dt, but if the error is too large,
+        self.dt will be reduced until it is below the required threshold '''
+
         steps = 0
         dt = self.dt
         while True:
@@ -206,7 +215,7 @@ class AdapativeTwoStep():
 
             # break out if the error is accceptible
             error_below_threshold = (r < self.epsilon)
-            logging.debug('dt={}, E={}, r={}, sufficient accuracy? {}'.format(dt, E, r, error_below_threshold))
+            self._debug_log(dt, E, r, error_below_threshold)
             if error_below_threshold:
                 self.dt = dt
                 self.t += dt
@@ -215,7 +224,7 @@ class AdapativeTwoStep():
                 np.copyto(dst=self.u, src=(2 * self.u2 - self.u1))
                 np.copyto(dst=self.v, src=(2 * self.v2 - self.v1))
                 np.copyto(dst=self.h, src=(2 * self.h2 - self.h1))
-                return steps, self.dt
+                return steps
 
             # repeat with a reduced dt if the error is too high
             dt = 0.9 * self.epsilon * dt / r
@@ -231,7 +240,7 @@ class AdapativeTwoStep():
         target_time = self.t + self.seconds_per_frame
         total_steps = 0
         while self.t < target_time:
-            steps, _ = self._step_forwards()
+            steps = self._timestep()
             total_steps += steps
 
         # compute the speed
@@ -285,7 +294,7 @@ def parse_args(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument('--ni', type=int, default=200)
     parser.add_argument('--nj', type=int, default=200)
-    parser.add_argument('--n', type=int)
+    parser.add_argument('-n', type=int)
     parser.add_argument('--drag', type=float, default=1.E-6)
     parser.add_argument('--gravity', type=float, default=9.8e-4)
     parser.add_argument('--width', type=float, default=100000)
@@ -317,8 +326,8 @@ def main(argv):
     # starting arrays and initial conditions
     u, v, h, speed = create_grids(args.ni, args.nj)
 
-    # create an object that adds water drops. since the wave shape involves
-    # cosines and is a bit slow, we use this object to cache the wave shape
+    # create an object that adds water drops. since the shape of the drop
+    # involves cosines and is a bit slow, we use this object to cache it
     dropper = RandomDropper(h)
 
     # create an initial drop to get things going
@@ -328,10 +337,8 @@ def main(argv):
     timestepper = AdapativeTwoStep(u, v, h, speed, dropper, args)
 
     # create a video of the simulation
-
-    video = Video(pixels=speed, progress_frame=timestepper.step_to_next_frame,
-                  max_pixel=args.maximum_speed)
-    video.show()
+    Video(pixels=speed, progress_frame=timestepper.step_to_next_frame,
+          max_pixel=args.maximum_speed).show()
 
 if __name__ == '__main__':
     main(sys.argv)
