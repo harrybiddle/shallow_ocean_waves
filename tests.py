@@ -81,6 +81,19 @@ class TestTimeDerivatives(unittest.TestCase):
         self.assertEqual(dv_dt.shape[1], self.rand_v.shape[1])
         self.assertEqual(dh_dt.shape, self.rand_h.shape)
 
+class TestComputeCurl(unittest.TestCase):
+
+    def test_compute_curl(self):
+
+        dx = dy = 1.0
+        u = create_new_test_array()[:-1, :]
+        v = create_new_test_array()[:, :-1]
+
+        u_at_v = (u[:-1, :-1] + u[1:, :-1] + u[1:, 1:] + u[-1:, 1:]) * 0.25
+        v_at_u = (v[:-1, :-1] + v[1:, :-1] + v[1:, 1:] + v[-1:, 1:]) * 0.25
+        du_dy = np.diff(u_at_v, axis=0) / dy
+        dv_dx = np.diff(v_at_u, axis=1) / dx
+        curl = dv_dx[1:-1, :] - du_dy[:, 1:-1]
 
 class TestBoundary(unittest.TestCase):
     ''' Check that boundary reflection functions are working. In the expected

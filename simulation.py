@@ -1,6 +1,8 @@
 import argparse
 import logging
 import math
+import random
+from random import randint
 import sys
 
 from pyqtgraph.Qt import QtCore, QtGui
@@ -36,7 +38,7 @@ import pyqtgraph as pg
 #
 # Governing equations:
 #
-#  dU/dT =   rotation * V - gravity * dH/dX - drag * U + wind
+#  dU/dT =   rotation * V - gravity * dH/dX - drag * U
 #  dV/dT = - rotation * U - gravity * dH/dY - drag * V
 #  dH/dT = - ( dU/dX + dV/dY ) * Hbackground / dX
 
@@ -46,35 +48,47 @@ def create_grids(ni, nj):
     u = np.zeros((nj + 2, ni + 3))
     v = np.zeros((nj + 3, ni + 2))
     h = np.zeros((nj + 2, ni + 2))
-    return u, v, h
+    speed = np.zeros((nj, ni))
+    return u, v, h, speed
 
-def create_bump_in_centre(h, width=0.25):
-    ''' Adds a small wave in the centre of the grid. The wave is of height one
-    and the diameter of the base is a WIDTH fraction of the grid width. For
+def create_central_bump(nj, ni, width=0.25):
+    ''' Creates a grid with a small 'bump' in the centre. The bump has a height
+    1 and the diameter of the base is a WIDTH fraction of the grid width. For
     example, WIDTH=0.25 corresponds to a quarter of the grid width.
     '''
-
-    def wave_shape(x, width):
+    def wave_shape(x):
         ''' A wave with unit height at X=0, going down to zero at X=width/2 '''
         x = np.clip(x, a_min=0, a_max=width / 2)
         y = math.cos(2 * math.pi * x / width) + 1
         return y / 2 # normalise to [0, 1]
 
-    nj, ni = h.shape
-    def normalised_distance_to_grid_centre(i, j):
+    def normalised_distance_to_grid_centre(j, i):
         d = lambda i, j: math.sqrt((i - ni / 2) ** 2 + (j - nj / 2) ** 2)
         return d(i, j) / d(0, 0)
 
+    bump = np.zeros((nj, ni))
     for j in range(0, nj):
         for i in range(0, ni):
-            d = normalised_distance_to_grid_centre(i, j)
-            h[j, i] = wave_shape(d, width)
+            d = normalised_distance_to_grid_centre(j, i)
+            bump[j, i] = wave_shape(d)
+    return bump
 
+class RandomDropper():
+
+    def __init__(self, h):
+        self.h = h[1:-1, 1:-1]
+        self.nj, self.ni = self.h.shape
+        self.bump = create_central_bump(self.nj, self.ni)
+
+    def add_drop_at_random_location(self):
+        random_shift = (randint(0, self.nj), randint(0, self.nj))
+        random_bump = np.roll(self.bump, random_shift, axis=(0, 1))
+        self.h += random_bump
 
 def compute_time_derivatives(u, v, h, c):
     ''' According to the equations:
 
-            du/dt = - gravity * dh/dx - drag * u + wind
+            du/dt = - gravity * dh/dx - drag * u
             dv/dt = - gravity * dh/dy - drag * v
             dh/dt = - (du/dx + dv/dy) * h_background / dx
 
@@ -88,7 +102,7 @@ def compute_time_derivatives(u, v, h, c):
     dv_dy = np.diff(v, axis=0) / c.dy
 
     # construct time derivatives
-    du_dt = - c.gravity * dh_dx - c.drag * u[:, 1:-1] + c.wind
+    du_dt = - c.gravity * dh_dx - c.drag * u[:, 1:-1]
     dv_dt = - c.gravity * dh_dy - c.drag * v[1:-1, :]
     dh_dt = - (du_dx + dv_dy) * c.h_background / c.dx
 
@@ -130,10 +144,18 @@ def timestep(u, v, h, dt, constants):
     du_dt, dv_dt, dh_dt = compute_time_derivatives(u, v, h, constants)
     apply_time_derivatives(u, v, h, du_dt, dv_dt, dh_dt, dt)
 
+def compute_speed_and_possibly_add_drop(u, v, speed, dropper, constants):
+    u_cell_centered = (u[1:-1, 1:-2] + u[1:-1, 2:-1]) * 0.5
+    v_cell_centered = (v[1:-2, 1:-1] + v[2:-1, 1:-1]) * 0.5
+    np.copyto(dst=speed, src=np.sqrt(u_cell_centered**2 + v_cell_centered ** 2))
+
+    if random.random() < constants.drop_probability:
+        dropper.add_drop_at_random_location()
+
 class AdapativeTwoStep():
 
-    def __init__(self, u, v, h, timestep, seconds_per_frame, t=0, epsilon=1e-5,
-                 max_steps=1000):
+    def __init__(self, u, v, h, timestep, post_frame_function, seconds_per_frame,
+                 t=0, epsilon=1e-5, max_steps=1000):
         ''' Implements the simple Euler 2-Step Adaptive Step Size algorithm
         from http://www.math.ubc.ca/~feldman/math/vble.pdf.
         '''
@@ -210,6 +232,8 @@ class AdapativeTwoStep():
             steps, _ = self.step_forwards()
             total_steps += steps
 
+        self.post_frame_function()
+
         print ('time = {:.2f}s in {} timesteps'.format(self.t, total_steps))
 
 class Video():
@@ -224,6 +248,10 @@ class Video():
         '''
         self.pixels = pixels
         self.progress_frame = progress_frame
+        colours = [(0,114,255),
+                   (14,210,247)]
+        self.cmap = pg.ColorMap(pos=np.linspace(0, 0.003, len(colours)),
+                                color=colours)
 
     def _create_qt_application(self):
         self.app = QtGui.QApplication([])
@@ -237,7 +265,8 @@ class Video():
 
     def _progress_frame_and_update_image(self):
         self.progress_frame()
-        self.image.setImage(self.pixels)
+        coloured_pixels = self.cmap.map(self.pixels)
+        self.image.setImage(coloured_pixels)
         QtCore.QTimer.singleShot(ONE_MILLISECOND,
                                  self._progress_frame_and_update_image)
 
@@ -259,13 +288,13 @@ def parse_args(argv):
     #parser.add_argument('--rotation', type=float, default=0.0)
     parser.add_argument('--drag', type=float, default=1.E-6)
     parser.add_argument('--gravity', type=float, default=9.8e-4)
-    parser.add_argument('--wind', type=float, default=1.e-8)
-    parser.add_argument('--dx', type=float, default=500)
-    parser.add_argument('--dy', type=float, default=500)
+    parser.add_argument('--width', type=float, default=100000)
+    parser.add_argument('--height', type=float, default=100000)
     parser.add_argument('--duration', type=float)
     parser.add_argument('--h_background', type=float, default=4000)
     parser.add_argument('--speed-multiplier', type=int, default=60000)
     parser.add_argument('--fps', type=int, default=24)
+    parser.add_argument('--drop-probability', type=float, default=1e-2)
     parser.add_argument('-v', '--debug', action='store_true')
     args = parser.parse_args(argv[1:])
 
@@ -273,27 +302,38 @@ def parse_args(argv):
     if args.n is not None:
         args.ni = args.nj = args.n
 
+    # set dx and dy
+    args.dx = args.width / args.ni
+    args.dy = args.width / args.nj
+
     return args
 
 def main(argv):
     args = parse_args(argv)
-
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
 
     # starting arrays and initial conditions
-    u, v, h = create_grids(args.ni, args.nj)
-    create_bump_in_centre(h)
+    u, v, h, speed = create_grids(args.ni, args.nj)
+
+    # create an object that adds water drops. since the wave shape involves
+    # cosines and is a bit slow, we use this object to cache the wave shape
+    dropper = RandomDropper(h)
+
+    # create an initial drop to get things going
+    dropper.add_drop_at_random_location()
 
     # create timestepper object, which will be used to progress the simulation
     seconds_per_frame = args.speed_multiplier / args.fps
     timestep_function = lambda u, v, h, dt: timestep(u, v, h, dt, args)
+    post_frame_function = lambda: compute_speed_and_possibly_add_drop(u, v, speed, dropper, args)
     timestepper = AdapativeTwoStep(u, v, h,
                                    timestep_function,
+                                   post_frame_function,
                                    seconds_per_frame)
 
     # create a video of the simulation
-    video = Video(pixels=h,
+    video = Video(pixels=speed,
                   progress_frame=timestepper.step_to_next_frame)
     video.show()
 
