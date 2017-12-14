@@ -18,15 +18,11 @@ def create_new_test_array():
 class TestStartingArrays(unittest.TestCase):
 
     def test_grid_shapes(self):
-        u, v, h = create_grids(10, 10)
+        u, v, h, speed = create_grids(10, 10)
         self.assertEqual((12, 12), h.shape)
         self.assertEqual((12, 13), u.shape)
         self.assertEqual((13, 12), v.shape)
-
-    def test_starting_height(self):
-        h = np.zeros((100, 100))
-        create_bump_in_centre(h)
-        self.assertEqual(1, h[50, 50])
+        self.assertEqual((10, 10), speed.shape)
 
 
 class TestTimeDerivatives(unittest.TestCase):
@@ -37,10 +33,10 @@ class TestTimeDerivatives(unittest.TestCase):
         self.rand_v = np.random.rand(7, 7)
 
     def compute_time_derivatives(self, u=np.zeros((6, 8)), v=np.zeros((7, 7)),
-                                 h=np.zeros((6, 7)), gravity=0.0, wind=0.0,
-                                 dx=1.0, dy=1.0, drag=0.0, h_background=1.0):
-        constants = SimpleNamespace(gravity=gravity, wind=wind, dx=dx, dy=dy,
-                                    drag=drag, h_background=h_background)
+                                 h=np.zeros((6, 7)), gravity=0.0, dx=1.0,
+                                 dy=1.0, drag=0.0, h_background=1.0):
+        constants = SimpleNamespace(gravity=gravity, dx=dx, dy=dy, drag=drag,
+                                    h_background=h_background)
         return compute_time_derivatives(u, v, h, constants)
 
     def test_dh_dx_term(self):
@@ -63,8 +59,7 @@ class TestTimeDerivatives(unittest.TestCase):
         rand_v_copy = np.array(self.rand_v, copy=True)
 
         self.compute_time_derivatives(u=self.rand_u, v=self.rand_v,
-                                      h=self.rand_h, gravity=1.0, wind=1.0,
-                                      drag=1.0)
+                                      h=self.rand_h, gravity=1.0, drag=1.0)
 
         np.testing.assert_equal(rand_h_copy, self.rand_h)
         np.testing.assert_equal(rand_u_copy, self.rand_u)
@@ -72,8 +67,7 @@ class TestTimeDerivatives(unittest.TestCase):
 
     def test_compute_time_derivatives_shape(self):
         r = self.compute_time_derivatives(u=self.rand_u, v=self.rand_v,
-                                          h=self.rand_h, gravity=1.0, wind=1.0,
-                                          drag=1.0)
+                                          h=self.rand_h, gravity=1.0, drag=1.0)
         du_dt, dv_dt, dh_dt = r
         self.assertEqual(du_dt.shape[0], self.rand_u.shape[0])
         self.assertEqual(du_dt.shape[1], self.rand_u.shape[1] - 2)
@@ -178,11 +172,10 @@ class TestSolverAgainstAnalyticalSolutions(unittest.TestCase):
                                '--n', str(n),
                                # '--rotation', '0',
                                '--gravity', '0',
-                               '--drag', str(drag),
-                                '--wind', '0'])
+                               '--drag', str(drag)])
 
         # initial conditions
-        u, v, h = create_grids(n, n)
+        u, v, h, _ = create_grids(n, n)
         u[:] = u_0
         v[:] = v_0
 

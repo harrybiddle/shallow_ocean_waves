@@ -38,8 +38,8 @@ import pyqtgraph as pg
 #
 # Governing equations:
 #
-#  dU/dT =   rotation * V - gravity * dH/dX - drag * U
-#  dV/dT = - rotation * U - gravity * dH/dY - drag * V
+#  dU/dT = - gravity * dH/dX - drag * U
+#  dV/dT = - gravity * dH/dY - drag * V
 #  dH/dT = - ( dU/dX + dV/dY ) * Hbackground / dX
 
 ONE_MILLISECOND = 1
@@ -48,7 +48,7 @@ def create_grids(ni, nj):
     u = np.zeros((nj + 2, ni + 3))
     v = np.zeros((nj + 3, ni + 2))
     h = np.zeros((nj + 2, ni + 2))
-    speed = np.zeros((nj, ni))
+    speed = np.zeros((nj, ni)) # note that speed doesn't have ghost values
     return u, v, h, speed
 
 def create_central_bump(nj, ni, width=0.25):
@@ -144,17 +144,14 @@ def timestep(u, v, h, dt, constants):
     du_dt, dv_dt, dh_dt = compute_time_derivatives(u, v, h, constants)
     apply_time_derivatives(u, v, h, du_dt, dv_dt, dh_dt, dt)
 
-def compute_speed_and_possibly_add_drop(u, v, speed, dropper, constants):
+def compute_speed(u, v, speed):
     u_cell_centered = (u[1:-1, 1:-2] + u[1:-1, 2:-1]) * 0.5
     v_cell_centered = (v[1:-2, 1:-1] + v[2:-1, 1:-1]) * 0.5
     np.copyto(dst=speed, src=np.sqrt(u_cell_centered**2 + v_cell_centered ** 2))
 
-    if random.random() < constants.drop_probability:
-        dropper.add_drop_at_random_location()
-
 class AdapativeTwoStep():
 
-    def __init__(self, u, v, h, timestep, post_frame_function, seconds_per_frame,
+    def __init__(self, u, v, h, speed, dropper, constants,
                  t=0, epsilon=1e-5, max_steps=1000):
         ''' Implements the simple Euler 2-Step Adaptive Step Size algorithm
         from http://www.math.ubc.ca/~feldman/math/vble.pdf.
@@ -165,7 +162,8 @@ class AdapativeTwoStep():
                 setattr(self, name, value)
 
         # take one frame to be the starting dt
-        self.dt = seconds_per_frame
+        self.seconds_per_frame = constants.speed_multiplier / constants.fps
+        self.dt = self.seconds_per_frame
 
         # create temporary copies for the substeps
         self.u1 = np.array(u, copy=True)
@@ -175,7 +173,7 @@ class AdapativeTwoStep():
         self.v2 = np.array(v, copy=True)
         self.h2 = np.array(h, copy=True)
 
-    def step_forwards(self):
+    def _step_forwards(self):
         steps = 0
         dt = self.dt
         while True:
@@ -193,11 +191,11 @@ class AdapativeTwoStep():
             np.copyto(dst=self.h2, src=self.h)
 
             # take one step forwards by dt
-            self.timestep(self.u1, self.v1, self.h1, dt)
+            timestep(self.u1, self.v1, self.h1, dt, self.constants)
 
             # take two half-steps forwards by dt/2
-            self.timestep(self.u2, self.v2, self.h2, dt / 2)
-            self.timestep(self.u2, self.v2, self.h2, dt / 2)
+            timestep(self.u2, self.v2, self.h2, dt / 2, self.constants)
+            timestep(self.u2, self.v2, self.h2, dt / 2, self.constants)
 
             # compare the two in order to generate an error estimate
             # only comparing height field here: could go further and compare u
@@ -224,15 +222,20 @@ class AdapativeTwoStep():
             logging.debug ('Reduced dt to {}'.format(dt))
 
     def step_to_next_frame(self):
+        # possibly add in a new water drop
+        if random.random() < self.constants.drop_probability:
+            self.dropper.add_drop_at_random_location()
+
         # step until we are past the target time. will overstep a bit, but it
         # doesn't make much of a visual difference
         target_time = self.t + self.seconds_per_frame
         total_steps = 0
         while self.t < target_time:
-            steps, _ = self.step_forwards()
+            steps, _ = self._step_forwards()
             total_steps += steps
 
-        self.post_frame_function()
+        # compute the speed
+        compute_speed(self.u, self.v, self.speed)
 
         print ('time = {:.2f}s in {} timesteps'.format(self.t, total_steps))
 
@@ -240,7 +243,7 @@ class Video():
     ''' Given a image and a callback function that mutates it to the next frame,
     displays the frames as a video in a QT app '''
 
-    def __init__(self, pixels, progress_frame):
+    def __init__(self, pixels, max_pixel, progress_frame):
         ''' Arguments:
             pixels: a 2D array whose entries represent pixel intensity.
             progress_frame: a function taking no arguments that updates the
@@ -248,10 +251,8 @@ class Video():
         '''
         self.pixels = pixels
         self.progress_frame = progress_frame
-        colours = [(0,114,255),
-                   (14,210,247)]
-        self.cmap = pg.ColorMap(pos=np.linspace(0, 0.003, len(colours)),
-                                color=colours)
+        colours = [(0,114,255), (14,210,247)]
+        self.cmap = pg.ColorMap(pos=[0, max_pixel], color=colours)
 
     def _create_qt_application(self):
         self.app = QtGui.QApplication([])
@@ -285,7 +286,6 @@ def parse_args(argv):
     parser.add_argument('--ni', type=int, default=200)
     parser.add_argument('--nj', type=int, default=200)
     parser.add_argument('--n', type=int)
-    #parser.add_argument('--rotation', type=float, default=0.0)
     parser.add_argument('--drag', type=float, default=1.E-6)
     parser.add_argument('--gravity', type=float, default=9.8e-4)
     parser.add_argument('--width', type=float, default=100000)
@@ -295,6 +295,7 @@ def parse_args(argv):
     parser.add_argument('--speed-multiplier', type=int, default=60000)
     parser.add_argument('--fps', type=int, default=24)
     parser.add_argument('--drop-probability', type=float, default=1e-2)
+    parser.add_argument('--maximum-speed', type=float, default=0.003)
     parser.add_argument('-v', '--debug', action='store_true')
     args = parser.parse_args(argv[1:])
 
@@ -324,17 +325,12 @@ def main(argv):
     dropper.add_drop_at_random_location()
 
     # create timestepper object, which will be used to progress the simulation
-    seconds_per_frame = args.speed_multiplier / args.fps
-    timestep_function = lambda u, v, h, dt: timestep(u, v, h, dt, args)
-    post_frame_function = lambda: compute_speed_and_possibly_add_drop(u, v, speed, dropper, args)
-    timestepper = AdapativeTwoStep(u, v, h,
-                                   timestep_function,
-                                   post_frame_function,
-                                   seconds_per_frame)
+    timestepper = AdapativeTwoStep(u, v, h, speed, dropper, args)
 
     # create a video of the simulation
-    video = Video(pixels=speed,
-                  progress_frame=timestepper.step_to_next_frame)
+
+    video = Video(pixels=speed, progress_frame=timestepper.step_to_next_frame,
+                  max_pixel=args.maximum_speed)
     video.show()
 
 if __name__ == '__main__':
