@@ -13,7 +13,7 @@ The equations are solved with the simplest possible method, forward Euler. As th
 The script should be run with Python 3. Clone or download this repository then install the necessary Python modules using pip:
 
 ```bash
-pip3 -r requirements.txt install
+pip3 install -r requirements.txt
 ```
 
 ### Usage
