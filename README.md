@@ -6,7 +6,7 @@ The Python script solves the _shallow water equations_, a simplified version of 
 
 The square domain wraps around in all corners, almost as if it was on a small planet. It was inspired by The University of Chicago's MOOC, [Global Warming II: Create Your Own Models in Python](https://www.coursera.org/learn/global-warming-model).
 
-The equations are solved with the simplest possible method, forward Euler. As this method is only conditionally stable, we estimate the error in each timestep and adaptively reduce step size if it is too large.
+The equations are solved with the simplest possible method, forward Euler. As this method is only conditionally stable, we estimate the error in each timestep and adaptively reduce the step size if it is too large.
 
 ### Installation
 
@@ -26,7 +26,7 @@ python3 shallow_ocean_waves.py
 
 <p align="center"><img src="images/example_simulation.gif"></p>
 
-The various parameters can be tweaked with human-readable units. For example, to have the waves decay less slowly:
+The various parameters can be tweaked with human-readable units. For example, to have the waves decay over a longer timescale:
 
 ```
 python3 shallow_ocean_waves.py --decay "1 month"
